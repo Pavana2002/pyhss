@@ -3632,7 +3632,7 @@ class Diameter:
                             #Video
                             ulBandwidth = 512000
                             dlBandwidth = 512000
-                            qci = 1
+                            qci = 2
                             precedence = 30
                             arp_priority = 11
                             rule_name = "GBR-Video_" + str(aarSessionID)
