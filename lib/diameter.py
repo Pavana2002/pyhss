@@ -3628,7 +3628,7 @@ class Diameter:
                             arp_priority = 14
                             rule_name = "GBR-Voice_" + str(aarSessionID)
                             charging_rule_id = 1000
-                        elif (int(mediaType, 16) == 4):
+                        elif (int(mediaType, 16) == 1):
                             #Video
                             ulBandwidth = 512000
                             dlBandwidth = 512000
