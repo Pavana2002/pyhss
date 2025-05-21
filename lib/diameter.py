@@ -3637,6 +3637,15 @@ class Diameter:
                             arp_priority = 11
                             rule_name = "GBR-Video_" + str(aarSessionID)
                             charging_rule_id = 1001
+                        elif (int(mediaType, 16) == 4):
+                            #Control
+                            ulBandwidth = 3840000
+                            dlBandwidth = 3840000
+                            qci = 5
+                            precedence = 20
+                            arp_priority = 8
+                            rule_name = "GBR-Control_" + str(aarSessionID)
+                            charging_rule_id = 1002
 
                         try:
                             avpUlBandwidth = int((self.get_avp_data(avps, 516)[0]), 16)
