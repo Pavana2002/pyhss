@@ -3643,8 +3643,8 @@ class Diameter:
                             dlBandwidth = 3840000
                             qci = 5
                             precedence = 20
-                            arp_priority = 8
-                            rule_name = "GBR-Control_" + str(aarSessionID)
+                            arp_priority = 1
+                            rule_name = "NonGBR-Control_" + str(aarSessionID)
                             charging_rule_id = 1002
 
                         try:
