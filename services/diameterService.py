@@ -159,7 +159,9 @@ class DiameterService:
                     await(self.logActivePeers())
                 
                 #Marshal the Peer objects and store in Redis
-                for peerKey, peer in activePeers.items():
+                #for peerKey, peer in activePeers.items():
+                for peerKey in list(activePeers.keys()):
+                    peer = activePeers[peerKey]
                     await(self.redisPeerMessaging.setHashValue(name=self.diameterPeerKey, key=peerKey, value=peer.model_dump_json(), keyExpiry=86400, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='diameter'))
 
                 await(asyncio.sleep(1))

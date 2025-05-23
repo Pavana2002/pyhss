@@ -3575,7 +3575,7 @@ class Diameter:
                     mediaType = self.get_avp_data(avps, 520)[0]
                     self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
                     # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
-                    valid_media_types = [0, 1, 4]
+                    valid_media_types = [0, 1]
                     if int(mediaType, 16) not in valid_media_types:
                         self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
                     assert(int(mediaType, 16) in valid_media_types)
@@ -3629,16 +3629,16 @@ class Diameter:
                             arp_priority = 14
                             rule_name = "GBR-Voice_" + str(aarSessionID)
                             charging_rule_id = 1000
-                        elif (int(mediaType, 16) == 4):
+                        elif (int(mediaType, 16) == 1):
                             #Video
                             ulBandwidth = 512000
                             dlBandwidth = 512000
-                            qci = 5
-                            precedence = 20
-                            arp_priority = 1
-                            rule_name = "NonGBR-Control_" + str(aarSessionID)
+                            qci = 2
+                            precedence = 30
+                            arp_priority = 11
+                            rule_name = "GBR-Video_" + str(aarSessionID)
                             charging_rule_id = 1001
- 
+
                         try:
                             avpUlBandwidth = int((self.get_avp_data(avps, 516)[0]), 16)
                             avpDlBandwidth = int((self.get_avp_data(avps, 515)[0]), 16)
@@ -4795,7 +4795,6 @@ class Diameter:
         Subscription_ID_Data = self.generate_avp(444, 40, str(binascii.hexlify(str.encode(imsi)),'ascii'))
         Subscription_ID_Type = self.generate_avp(450, 40, format(int(1),"x").zfill(8))
         avp += self.generate_avp(443, 40, Subscription_ID_Type + Subscription_ID_Data)
-
 
         #AVP: Supported-Features(628) l=36 f=V-- vnd=TGPP
         SupportedFeatures = ''
