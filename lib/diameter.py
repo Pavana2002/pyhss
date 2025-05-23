@@ -3627,7 +3627,8 @@ class Diameter:
                             qci = 1
                             precedence = 1
                             arp_priority = 2
-							arpPreemptionCapability = True
+                            arpPreemptionCapability = True
+                            arpPreemptionVulnerability = True
                             rule_name = "GBR-Voice_" + str(aarSessionID)
                             charging_rule_id = 1000
                         elif (int(mediaType, 16) == 1):
@@ -3637,7 +3638,8 @@ class Diameter:
                             qci = 2
                             precedence = 2
                             arp_priority = 4
-							arpPreemptionCapability = True
+                            arpPreemptionCapability = True
+                            arpPreemptionVulnerability = True
                             rule_name = "GBR-Video_" + str(aarSessionID)
                             charging_rule_id = 1001
 
