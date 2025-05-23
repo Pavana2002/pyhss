@@ -3573,8 +3573,9 @@ class Diameter:
 
                 try:
                     mediaType = self.get_avp_data(avps, 520)[0]
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
                     # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
-                    valid_media_types = [0, 1]
+                    valid_media_types = [0, 1, 4]
                     if int(mediaType, 16) not in valid_media_types:
                         self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
                     assert(int(mediaType, 16) in valid_media_types)
@@ -3633,7 +3634,7 @@ class Diameter:
                             ulBandwidth = 512000
                             dlBandwidth = 512000
                             qci = 5
-                            precedence = 30
+                            precedence = 20
                             arp_priority = 1
                             rule_name = "NonGBR-Control_" + str(aarSessionID)
                             charging_rule_id = 1001
