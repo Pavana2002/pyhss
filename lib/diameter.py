@@ -3628,14 +3628,14 @@ class Diameter:
                             arp_priority = 14
                             rule_name = "GBR-Voice_" + str(aarSessionID)
                             charging_rule_id = 1000
-                        elif (int(mediaType, 16) == 1):
+                        elif (int(mediaType, 16) == 4):
                             #Video
                             ulBandwidth = 512000
                             dlBandwidth = 512000
-                            qci = 2
+                            qci = 5
                             precedence = 30
-                            arp_priority = 11
-                            rule_name = "GBR-Video_" + str(aarSessionID)
+                            arp_priority = 1
+                            rule_name = "NonGBR-Control_" + str(aarSessionID)
                             charging_rule_id = 1001
  
                         try:
