@@ -3625,8 +3625,9 @@ class Diameter:
                             ulBandwidth = 128000
                             dlBandwidth = 128000
                             qci = 1
-                            precedence = 40
-                            arp_priority = 14
+                            precedence = 1
+                            arp_priority = 2
+							arpPreemptionCapability = True
                             rule_name = "GBR-Voice_" + str(aarSessionID)
                             charging_rule_id = 1000
                         elif (int(mediaType, 16) == 1):
@@ -3634,8 +3635,9 @@ class Diameter:
                             ulBandwidth = 512000
                             dlBandwidth = 512000
                             qci = 2
-                            precedence = 30
-                            arp_priority = 11
+                            precedence = 2
+                            arp_priority = 4
+							arpPreemptionCapability = True
                             rule_name = "GBR-Video_" + str(aarSessionID)
                             charging_rule_id = 1001
 

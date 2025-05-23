@@ -192,3 +192,10 @@ influxdb:
 snmp:
   port: 1161
   listen_address: 127.0.0.1
+  
+diameter:
+  supported_media_types:
+    - audio
+    - video
+    - application
+
