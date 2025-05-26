@@ -3572,88 +3572,93 @@ class Diameter:
 
 
                 try:
-                    mediaType = self.get_avp_data(avps, 520)[0]
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
-                    # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
-                    valid_media_types = [0, 1]
-                    if int(mediaType, 16) not in valid_media_types:
-                        self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
-                    assert(int(mediaType, 16) in valid_media_types)
-                    # At this point, we know the AAR is indicating a call setup, so we'll get the serving pgw information, then send a 
-                    # RAR to the PGW over Gx, asking it to setup the dedicated bearer.
+                    # Extract all Media-Component-Description AVPs
+                    media_components = self.get_avp_data(avps, 517)
 
-                    try:
-                        if emergencySubscriber and not imsEnabled:
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Call from an emergency subscriber without IMS enabled", redisClient=self.redisMessaging)
-                            servingPgwPeer = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
-                            pcrfSessionId = emergencySubscriberData.get('serving_pgw', None)
-                            servingPgwRealm = emergencySubscriberData.get('gx_origin_realm', None)
-                            servingPgw = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
-                        else:
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting subscriber ID", redisClient=self.redisMessaging)
-                            subscriberId = subscriberDetails.get('subscriber_id', None)
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got subscriber ID", redisClient=self.redisMessaging)
-                            if serviceUrn:
-                                if 'sos' in str(serviceUrn).lower():
-                                    registeredEmergencySubscriber = True                                    
-                                    apnId = (self.database.Get_APN_by_Name(apn="sos")).get('apn_id', None)
-                                    self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] registeredEmergencySubscriber is True as this is SOS APN", redisClient=self.redisMessaging)
-                            elif ipApnName:
-                                if 'sos' in ipApnName.lower():
-                                    registeredEmergencySubscriber = True
-                                    apnId = (self.database.Get_APN_by_Name(apn="sos")).get('apn_id', None)
-                                    self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] registeredEmergencySubscriber is True as this is SOS APN", redisClient=self.redisMessaging)
-                            if apnId == None:
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting ID for ims apn", redisClient=self.redisMessaging)
-                                apnId = (self.database.Get_APN_by_Name(apn="ims")).get('apn_id', None)
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] ApnID: {apnId}", redisClient=self.redisMessaging)
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting Serving APN for subscriberId: {subscriberId} and apnId: {apnId}", redisClient=self.redisMessaging)
-                            if remoteServingApn:
-                                servingApn = remoteServingApn
-                            else:
-                                servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
-                            servingPgwPeer = servingApn.get('serving_pgw_peer', None).split(';')[0]
-                            servingPgw = servingApn.get('serving_pgw', None)
-                            servingPgwRealm = servingApn.get('serving_pgw_realm', None)
-                            pcrfSessionId = servingApn.get('pcrf_session_id', None)
-
-                        if not ueIp:
-                            ueIp = servingApn.get('subscriber_routing', None)
-
-                        if (int(mediaType, 16) == 0):
-                            #Audio
-                            ulBandwidth = 128000
-                            dlBandwidth = 128000
-                            qci = 1
-                            precedence = 1
-                            arp_priority = 2
-                            arpPreemptionCapability = True
-                            arpPreemptionVulnerability = True
-                            rule_name = "GBR-Voice_" + str(aarSessionID)
-                            charging_rule_id = 1000
-                        elif (int(mediaType, 16) == 1):
-                            #Video
-                            ulBandwidth = 512000
-                            dlBandwidth = 512000
-                            qci = 2
-                            precedence = 2
-                            arp_priority = 4
-                            arpPreemptionCapability = True
-                            arpPreemptionVulnerability = True
-                            rule_name = "GBR-Video_" + str(aarSessionID)
-                            charging_rule_id = 1001
+                    # Iterate through each media component
+                    for media_avp in media_components:
+                        mediaType = self.get_avp_data(media_avp, 520)[0]
+                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
+                        # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
+                        valid_media_types = [0, 1]
+                        if int(mediaType, 16) not in valid_media_types:
+                            self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
+                        assert(int(mediaType, 16) in valid_media_types)
+                        # At this point, we know the AAR is indicating a call setup, so we'll get the serving pgw information, then send a 
+                        # RAR to the PGW over Gx, asking it to setup the dedicated bearer.
 
                         try:
-                            avpUlBandwidth = int((self.get_avp_data(avps, 516)[0]), 16)
-                            avpDlBandwidth = int((self.get_avp_data(avps, 515)[0]), 16)
-
-                            if avpUlBandwidth <= ulBandwidth:
-                                ulBandwidth = avpUlBandwidth
-                    
-                            if avpDlBandwidth <= dlBandwidth:
-                                dlBandwidth = avpDlBandwidth
-                        except Exception as e:
-                            pass
+                            if emergencySubscriber and not imsEnabled:
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Call from an emergency subscriber without IMS enabled", redisClient=self.redisMessaging)
+                                servingPgwPeer = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
+                                pcrfSessionId = emergencySubscriberData.get('serving_pgw', None)
+                                servingPgwRealm = emergencySubscriberData.get('gx_origin_realm', None)
+                                servingPgw = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
+                            else:
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting subscriber ID", redisClient=self.redisMessaging)
+                                subscriberId = subscriberDetails.get('subscriber_id', None)
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got subscriber ID", redisClient=self.redisMessaging)
+                                if serviceUrn:
+                                    if 'sos' in str(serviceUrn).lower():
+                                        registeredEmergencySubscriber = True                                    
+                                        apnId = (self.database.Get_APN_by_Name(apn="sos")).get('apn_id', None)
+                                        self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] registeredEmergencySubscriber is True as this is SOS APN", redisClient=self.redisMessaging)
+                                elif ipApnName:
+                                    if 'sos' in ipApnName.lower():
+                                        registeredEmergencySubscriber = True
+                                        apnId = (self.database.Get_APN_by_Name(apn="sos")).get('apn_id', None)
+                                        self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] registeredEmergencySubscriber is True as this is SOS APN", redisClient=self.redisMessaging)
+                                if apnId == None:
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting ID for ims apn", redisClient=self.redisMessaging)
+                                    apnId = (self.database.Get_APN_by_Name(apn="ims")).get('apn_id', None)
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] ApnID: {apnId}", redisClient=self.redisMessaging)
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Getting Serving APN for subscriberId: {subscriberId} and apnId: {apnId}", redisClient=self.redisMessaging)
+                                if remoteServingApn:
+                                    servingApn = remoteServingApn
+                                else:
+                                    servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
+                                servingPgwPeer = servingApn.get('serving_pgw_peer', None).split(';')[0]
+                                servingPgw = servingApn.get('serving_pgw', None)
+                                servingPgwRealm = servingApn.get('serving_pgw_realm', None)
+                                pcrfSessionId = servingApn.get('pcrf_session_id', None)
+    
+                            if not ueIp:
+                                ueIp = servingApn.get('subscriber_routing', None)
+    
+                            if (int(mediaType, 16) == 0):
+                                #Audio
+                                ulBandwidth = 128000
+                                dlBandwidth = 128000
+                                qci = 1
+                                precedence = 1
+                                arp_priority = 2
+                                arpPreemptionCapability = True
+                                arpPreemptionVulnerability = True
+                                rule_name = "GBR-Voice_" + str(aarSessionID)
+                                charging_rule_id = 1000
+                            elif (int(mediaType, 16) == 1):
+                                #Video
+                                ulBandwidth = 512000
+                                dlBandwidth = 512000
+                                qci = 2
+                                precedence = 2
+                                arp_priority = 4
+                                arpPreemptionCapability = True
+                                arpPreemptionVulnerability = True
+                                rule_name = "GBR-Video_" + str(aarSessionID)
+                                charging_rule_id = 1001
+    
+                            try:
+                                avpUlBandwidth = int((self.get_avp_data(media_avp, 516)[0]), 16)
+                                avpDlBandwidth = int((self.get_avp_data(media_avp, 515)[0]), 16)
+    
+                                if avpUlBandwidth <= ulBandwidth:
+                                    ulBandwidth = avpUlBandwidth
+                        
+                                if avpDlBandwidth <= dlBandwidth:
+                                    dlBandwidth = avpDlBandwidth
+                            except Exception as e:
+                                pass
 
                         """
                         If the PCSCF supplies us TFT's ready to go, use those.
