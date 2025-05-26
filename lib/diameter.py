@@ -4840,14 +4840,14 @@ class Diameter:
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionId)),'ascii'))          #Session-Id set AVP
 
         #Setup Charging Rule
-        self.logTool.log(service='HSS', level='info', message=chargingRules, redisClient=self.redisMessaging)
+        self.logTool.log(service='HSS', level='debug', message=chargingRules, redisClient=self.redisMessaging)
         if chargingRules is not None and ueIp is not None:
-            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Request_16777238_258] [RAR] Charging Rules: {chargingRules}", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Request_16777238_258] [RAR] Charging Rules: {chargingRules}", redisClient=self.redisMessaging)
             avp += self.Charging_Rule_Generator(ChargingRules=chargingRules, ue_ip=ueIp)
-            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Request_16777238_258] [RAR] Generated Charging Rules", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Request_16777238_258] [RAR] Generated Charging Rules", redisClient=self.redisMessaging)
         elif chargingRuleName is not None and chargingRuleAction == 'remove':
             avp += self.Charging_Rule_Generator(action=chargingRuleAction, chargingRuleName=chargingRuleName)
-            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Request_16777238_258] [RAR] Removing Charging Rule: {chargingRuleName}", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Request_16777238_258] [RAR] Removing Charging Rule: {chargingRuleName}", redisClient=self.redisMessaging)
 
         avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
         avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
