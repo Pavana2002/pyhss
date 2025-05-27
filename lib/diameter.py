@@ -3587,7 +3587,7 @@ class Diameter:
                         # At this point, we know the AAR is indicating a call setup, so we'll get the serving pgw information, then send a 
                         # RAR to the PGW over Gx, asking it to setup the dedicated bearer.
                         
-                        if mediaType == 4:
+                        if (int(mediaType, 16) == 4):
                             self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}, no charging rule needed", redisClient=self.redisMessaging)
                             continue
 
