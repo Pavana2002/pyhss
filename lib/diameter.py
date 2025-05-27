@@ -3660,196 +3660,196 @@ class Diameter:
                             except Exception as e:
                                 pass
 
-                        """
-                        If the PCSCF supplies us TFT's ready to go, use those.
-                        If not, compile our own.
-                        """
-                        suppliedTfts = None
-                        completedTftList = []
+                            """
+	                        If the PCSCF supplies us TFT's ready to go, use those.
+	                        If not, compile our own.
+	                        """
+                            suppliedTfts = None
+                            completedTftList = []
 
-                        try:
-                            suppliedTfts = self.get_avp_data(avps, 507)
-                            if suppliedTfts:
-                                if isinstance(suppliedTfts, list):
-                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] P-CSCF provided TFTs", redisClient=self.redisMessaging)
-                                    tftId = 1
-                                    for suppliedTft in suppliedTfts:
-                                        tftDirection = None
-                                        decodedTft = bytes.fromhex(suppliedTft).decode('ascii')
-                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got TFT from PCSCF: {decodedTft}", redisClient=self.redisMessaging)
-                                        if 'permit out' in decodedTft.lower():
-                                            tftDirection = 1
-                                        if 'permit in' in decodedTft.lower():
-                                            #@@ Ugly hack, but open5gs has no support for 'permit in' currently.
-                                            # Assuming standard syntax, we need to flip the src srcprt and dst dstport, then change permit in to permit out.
-                                            # permit out 17 from 1.1.1.1 54939 to 2.2.2.2 50021
-                                            # permit in 17 from 2.2.2.2 50021 to 2.2.2.2 54939
-                                            decodedTftSplit = decodedTft.split(' ')
-                                            decodedTft = f"permit out {decodedTftSplit[2]} from {decodedTftSplit[7]} {decodedTftSplit[8]} to {decodedTftSplit[4]} {decodedTftSplit[5]}"
-                                            tftDirection = 2
-                                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Recompiled 'permit in' TFT to: {decodedTft}", redisClient=self.redisMessaging)
-
-                                        completedTftList.append({
-                                        "tft_group_id": 1,
-                                        "direction": tftDirection,
-                                        "tft_id": tftId,
-                                        "tft_string": decodedTft
-                                        }
-                                        )
-                                        tftId += 1
-                        except Exception as e:
-                            self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error using TFTs from PCSCF: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                        if not suppliedTfts:
                             try:
-                                sdpOffer = self.get_avp_data(avps, 524)[0]
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer raw: {sdpOffer}", redisClient=self.redisMessaging)
-                                sdpOffer = binascii.unhexlify(sdpOffer).decode('utf-8')
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer decoded: {sdpOffer}", redisClient=self.redisMessaging)
-                                sdpAnswer = self.get_avp_data(avps, 524)[1]
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer raw: {sdpAnswer}", redisClient=self.redisMessaging)
-                                sdpAnswer = binascii.unhexlify(sdpAnswer).decode('utf-8')
-                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer decoded: {sdpAnswer}", redisClient=self.redisMessaging)
+                                suppliedTfts = self.get_avp_data(avps, 507)
+                                if suppliedTfts:
+                                    if isinstance(suppliedTfts, list):
+                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] P-CSCF provided TFTs", redisClient=self.redisMessaging)
+                                        tftId = 1
+                                        for suppliedTft in suppliedTfts:
+                                            tftDirection = None
+                                            decodedTft = bytes.fromhex(suppliedTft).decode('ascii')
+                                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got TFT from PCSCF: {decodedTft}", redisClient=self.redisMessaging)
+                                            if 'permit out' in decodedTft.lower():
+                                                tftDirection = 1
+                                            if 'permit in' in decodedTft.lower():
+                                                #@@ Ugly hack, but open5gs has no support for 'permit in' currently.
+                                                # Assuming standard syntax, we need to flip the src srcprt and dst dstport, then change permit in to permit out.
+                                                # permit out 17 from 1.1.1.1 54939 to 2.2.2.2 50021
+                                                # permit in 17 from 2.2.2.2 50021 to 2.2.2.2 54939
+                                                decodedTftSplit = decodedTft.split(' ')
+                                                decodedTft = f"permit out {decodedTftSplit[2]} from {decodedTftSplit[7]} {decodedTftSplit[8]} to {decodedTftSplit[4]} {decodedTftSplit[5]}"
+                                                tftDirection = 2
+                                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Recompiled 'permit in' TFT to: {decodedTft}", redisClient=self.redisMessaging)
 
-                                regexIpv4 = r"IN IP4 (\d*\.\d*\.\d*\.\d*)"
-                                regexIpv6 = r"IN IP6 ([0-9a-fA-F:]{3,39})"
-                                regexRtp = r"m=audio (\d*)"
-                                regexRtcp = r"a=rtcp:(\d+)"                            
-
-                                sdpDownlink = None
-                                sdpUplink = None
-                                sdpDownlinkIpv4 = ''
-                                sdpDownlinkRtpPort = ''
-                                sdpUplinkRtpPort = ''
-
-                                # First, work out which side the SDP Downlink is, then do the same for the SDP Uplink.
-                                if 'downlink' in sdpOffer.lower():
-                                    sdpDownlink  = sdpOffer
-                                elif 'downlink' in sdpAnswer.lower():
-                                    sdpDownlink = sdpAnswer
-                                
-                                if 'uplink' in sdpOffer.lower():
-                                    sdpUplink  = sdpOffer
-                                elif 'uplink' in sdpAnswer.lower():
-                                    sdpUplink = sdpAnswer
-
-                                # Grab the SDP Downlink IP
-                                sdpDownlinkIpv4 = self.Match_SDP(regexPattern=regexIpv4, sdpBody=sdpDownlink)
-                                sdpDownlinkIpv6 = self.Match_SDP(regexPattern=regexIpv6, sdpBody=sdpDownlink)
-
-                                # Get the RTP ports
-                                sdpDownlinkRtpPort = self.Match_SDP(regexPattern=regexRtp, sdpBody=sdpDownlink)
-                                sdpUplinkRtpPort = self.Match_SDP(regexPattern=regexRtp, sdpBody=sdpUplink)
-
-                                # The RTCP Port is always the RTP port + 1. Comma separated ports arent used due to lack of support in open source PGWs.
-                                # We take a blind approach by setting a range of +1 on both sides.
-                                sdpDownlinkRtpPorts = f"{sdpDownlinkRtpPort}-{int(sdpDownlinkRtpPort)+1}"
-                                sdpUplinkRtpPorts = f"{sdpUplinkRtpPort}-{int(sdpUplinkRtpPort)+1}"
-
-                                # If we've got a UE that's sending a malformed request, use a fallback rule.
-                                # Else, if all necessary variables are defined, use the correct SDP rule.
-                                # The fallback rule will fail on some cheap handsets.
-                                if not sdpDownlinkIpv4 or not sdpDownlinkRtpPort or not sdpUplinkRtpPort:
-                                    tftString = f"permit out 17 from {ueIp}/32 1-65535 to any 1-65535"
-                                else:
-                                    tftString = f"permit out 17 from {sdpDownlinkIpv4}/32 {sdpDownlinkRtpPorts} to {ueIp}/32 {sdpUplinkRtpPorts}"
-                                
-                                completedTftList.append({
-                                        "tft_group_id": 1,
-                                        "direction": 2,
-                                        "tft_id": 2,
-                                        "tft_string": tftString  
-                                        })
-                                completedTftList.append({
-                                        "tft_group_id": 1,
-                                        "direction": 1,
-                                        "tft_id": 1,
-                                        "tft_string": tftString
-                                        })
-
+                                            completedTftList.append({
+                                            "tft_group_id": 1,
+                                            "direction": tftDirection,
+                                            "tft_id": tftId,
+                                            "tft_string": decodedTft
+                                            }
+	                                        )
+                                        tftId += 1
                             except Exception as e:
-                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Failed to extract SDP due to error: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error using TFTs from PCSCF: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                            if not suppliedTfts:
+                                try:
+                                    sdpOffer = self.get_avp_data(avps, 524)[0]
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer raw: {sdpOffer}", redisClient=self.redisMessaging)
+                                    sdpOffer = binascii.unhexlify(sdpOffer).decode('utf-8')
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer decoded: {sdpOffer}", redisClient=self.redisMessaging)
+                                    sdpAnswer = self.get_avp_data(avps, 524)[1]
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer raw: {sdpAnswer}", redisClient=self.redisMessaging)
+                                    sdpAnswer = binascii.unhexlify(sdpAnswer).decode('utf-8')
+                                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer decoded: {sdpAnswer}", redisClient=self.redisMessaging)
+
+                                    regexIpv4 = r"IN IP4 (\d*\.\d*\.\d*\.\d*)"
+                                    regexIpv6 = r"IN IP6 ([0-9a-fA-F:]{3,39})"
+                                    regexRtp = r"m=audio (\d*)"
+                                    regexRtcp = r"a=rtcp:(\d+)"                            
+
+                                    sdpDownlink = None
+                                    sdpUplink = None
+                                    sdpDownlinkIpv4 = ''
+                                    sdpDownlinkRtpPort = ''
+                                    sdpUplinkRtpPort = ''
+
+                                    # First, work out which side the SDP Downlink is, then do the same for the SDP Uplink.
+                                    if 'downlink' in sdpOffer.lower():
+	                                    sdpDownlink  = sdpOffer
+                                    elif 'downlink' in sdpAnswer.lower():
+                                        sdpDownlink = sdpAnswer
+                                
+                                    if 'uplink' in sdpOffer.lower():
+                                        sdpUplink  = sdpOffer
+                                    elif 'uplink' in sdpAnswer.lower():
+                                        sdpUplink = sdpAnswer
+
+                                    # Grab the SDP Downlink IP
+                                    sdpDownlinkIpv4 = self.Match_SDP(regexPattern=regexIpv4, sdpBody=sdpDownlink)
+                                    sdpDownlinkIpv6 = self.Match_SDP(regexPattern=regexIpv6, sdpBody=sdpDownlink)
+
+                                    # Get the RTP ports
+                                    sdpDownlinkRtpPort = self.Match_SDP(regexPattern=regexRtp, sdpBody=sdpDownlink)
+                                    sdpUplinkRtpPort = self.Match_SDP(regexPattern=regexRtp, sdpBody=sdpUplink)
+
+	                                # The RTCP Port is always the RTP port + 1. Comma separated ports arent used due to lack of support in open source PGWs.
+	                                # We take a blind approach by setting a range of +1 on both sides.
+                                    sdpDownlinkRtpPorts = f"{sdpDownlinkRtpPort}-{int(sdpDownlinkRtpPort)+1}"
+                                    sdpUplinkRtpPorts = f"{sdpUplinkRtpPort}-{int(sdpUplinkRtpPort)+1}"
+
+                                    # If we've got a UE that's sending a malformed request, use a fallback rule.
+	                                # Else, if all necessary variables are defined, use the correct SDP rule.
+	                                # The fallback rule will fail on some cheap handsets.
+                                    if not sdpDownlinkIpv4 or not sdpDownlinkRtpPort or not sdpUplinkRtpPort:
+                                        tftString = f"permit out 17 from {ueIp}/32 1-65535 to any 1-65535"
+                                    else:
+                                        tftString = f"permit out 17 from {sdpDownlinkIpv4}/32 {sdpDownlinkRtpPorts} to {ueIp}/32 {sdpUplinkRtpPorts}"
+                                
+                                    completedTftList.append({
+                                            "tft_group_id": 1,
+	                                        "direction": 2,
+	                                        "tft_id": 2,
+	                                        "tft_string": tftString  
+	                                        })
+                                    completedTftList.append({
+	                                        "tft_group_id": 1,
+	                                        "direction": 1,
+	                                        "tft_id": 1,
+	                                        "tft_string": tftString
+	                                        })
+
+                                except Exception as e:
+                                    self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Failed to extract SDP due to error: {traceback.format_exc()}", redisClient=self.redisMessaging)
                     
-                        """
-                        The below logic is applied:
-                        1. Grab the Flow Rules and bitrates from the PCSCF in the AAR,
-                        2. Compare it to a given backup rule
-                        - If the flowrates are greater than the backup rule (UE is asking for more than allowed), use the backup rule
-                        - If the flowrates are lesser than the backup rule, use the requested flowrates.
-                        3. Send the winning rule.
-                        """
+                            """
+	                        The below logic is applied:
+	                        1. Grab the Flow Rules and bitrates from the PCSCF in the AAR,
+	                        2. Compare it to a given backup rule
+	                        - If the flowrates are greater than the backup rule (UE is asking for more than allowed), use the backup rule
+	                        - If the flowrates are lesser than the backup rule, use the requested flowrates.
+	                        3. Send the winning rule.
+	                        """
 
-                        if emergencySubscriber or registeredEmergencySubscriber:
-                            self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] Setting ARP to PreEmpt as this is an emergency bearer", redisClient=self.redisMessaging)
-                            arpPreemptionCapability = True
-                            arpPreemptionVulnerability = False
-                        else:
-                            arpPreemptionCapability = False
-                            arpPreemptionVulnerability = True
+                            if emergencySubscriber or registeredEmergencySubscriber:
+	                            self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777236_265] [AAA] Setting ARP to PreEmpt as this is an emergency bearer", redisClient=self.redisMessaging)
+	                            arpPreemptionCapability = True
+	                            arpPreemptionVulnerability = False
+                            else:
+	                            arpPreemptionCapability = False
+	                            arpPreemptionVulnerability = True
                         
-                        chargingRule = {
-                        "charging_rule_id": charging_rule_id,
-                        "qci": qci,
-                        "arp_preemption_capability": arpPreemptionCapability,
-                        "mbr_dl": dlBandwidth,
-                        "mbr_ul": ulBandwidth,
-                        "gbr_ul": ulBandwidth,
-                        "precedence": precedence,
-                        "arp_priority": arp_priority,
-                        "rule_name": rule_name,
-                        "arp_preemption_vulnerability": arpPreemptionVulnerability,
-                        "gbr_dl": dlBandwidth,
-                        "tft_group_id": 1,
-                        "rating_group": None,
-                        "tft": completedTftList
-                        }
+                            chargingRule = {
+	                        "charging_rule_id": charging_rule_id,
+	                        "qci": qci,
+	                        "arp_preemption_capability": arpPreemptionCapability,
+	                        "mbr_dl": dlBandwidth,
+	                        "mbr_ul": ulBandwidth,
+	                        "gbr_ul": ulBandwidth,
+	                        "precedence": precedence,
+	                        "arp_priority": arp_priority,
+	                        "rule_name": rule_name,
+	                        "arp_preemption_vulnerability": arpPreemptionVulnerability,
+	                        "gbr_dl": dlBandwidth,
+	                        "tft_group_id": 1,
+	                        "rating_group": None,
+	                        "tft": completedTftList
+	                        }
 
-                        if not emergencySubscriber:
-                            self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=aarOriginHost, pcscf_realm=aarOriginRealm, pcscf_peer=remotePeer, pcscf_active_session=sessionId)
-                        else:
-                            updatedEmergencySubscriberData = {
-                                "servingPgw": emergencySubscriberData.get('serving_pgw'),
-                                "requestTime": emergencySubscriberData.get('serving_pgw_timestamp'),
-                                "servingPcscf": sessionId,
-                                "aarRequestTime": int(time.time()),
-                                "gxOriginRealm": emergencySubscriberData.get('gx_origin_realm'),
-                                "gxOriginHost": emergencySubscriberData.get('gx_origin_host'),
-                                "imsi": emergencySubscriberData.get('imsi'),
-                                "ip": emergencySubscriberData.get('ip'),
-                                "ratType": emergencySubscriberData.get('rat_type'),
-                                "accessNetworkGatewayAddress": emergencySubscriberData.get('access_network_gateway_address'),
-                                "accessNetworkChargingAddress": emergencySubscriberData.get('access_network_charging_address'),
-                            }
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Updating Emergency Subscriber: {updatedEmergencySubscriberData}", redisClient=self.redisMessaging)
-                            self.database.Update_Emergency_Subscriber(subscriberIp=ueIp, subscriberData=updatedEmergencySubscriberData, imsi=imsi)
+                            if not emergencySubscriber:
+	                            self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=aarOriginHost, pcscf_realm=aarOriginRealm, pcscf_peer=remotePeer, pcscf_active_session=sessionId)
+                            else:
+                                updatedEmergencySubscriberData = {
+	                                "servingPgw": emergencySubscriberData.get('serving_pgw'),
+	                                "requestTime": emergencySubscriberData.get('serving_pgw_timestamp'),
+	                                "servingPcscf": sessionId,
+	                                "aarRequestTime": int(time.time()),
+	                                "gxOriginRealm": emergencySubscriberData.get('gx_origin_realm'),
+	                                "gxOriginHost": emergencySubscriberData.get('gx_origin_host'),
+	                                "imsi": emergencySubscriberData.get('imsi'),
+	                                "ip": emergencySubscriberData.get('ip'),
+	                                "ratType": emergencySubscriberData.get('rat_type'),
+	                                "accessNetworkGatewayAddress": emergencySubscriberData.get('access_network_gateway_address'),
+	                                "accessNetworkChargingAddress": emergencySubscriberData.get('access_network_charging_address'),
+	                            }
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Updating Emergency Subscriber: {updatedEmergencySubscriberData}", redisClient=self.redisMessaging)
+                                self.database.Update_Emergency_Subscriber(subscriberIp=ueIp, subscriberData=updatedEmergencySubscriberData, imsi=imsi)
 
-                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAR Generated to be sent to serving PGW: {servingPgw} via peer {servingPgwPeer}", redisClient=self.redisMessaging)
-                        reAuthAnswer = self.awaitDiameterRequestAndResponse(
-                                requestType='RAR',
-                                hostname=servingPgwPeer,
-                                sessionId=pcrfSessionId,
-                                chargingRules=chargingRule,
-                                ueIp=ueIp,
-                                servingPgw=servingPgw,
-                                servingRealm=servingPgwRealm
-                        )
+                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAR Generated to be sent to serving PGW: {servingPgw} via peer {servingPgwPeer}", redisClient=self.redisMessaging)
+                            reAuthAnswer = self.awaitDiameterRequestAndResponse(
+	                                requestType='RAR',
+	                                hostname=servingPgwPeer,
+	                                sessionId=pcrfSessionId,
+	                                chargingRules=chargingRule,
+	                                ueIp=ueIp,
+	                                servingPgw=servingPgw,
+	                                servingRealm=servingPgwRealm
+	                        )
 
-                        if not len(reAuthAnswer) > 0:
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
-                            assert()
+                            if not len(reAuthAnswer) > 0:
+	                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
+	                            assert()
                             
-                        raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
-                        raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
+                            raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
+                            raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
 
-                        if raaResultCode == 2001:
+                            if raaResultCode == 2001:
+	                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
+                            else:
+	                            avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
+
+                        except Exception as e:
+                            self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, Authorizing request: {traceback.format_exc()}", redisClient=self.redisMessaging)
                             avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
-                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
-                        else:
-                            avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
-                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
-
-                    except Exception as e:
-                        self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, Authorizing request: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                        avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
                 except Exception as e:
                     self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error generating AAA Charging Rule: {traceback.format_exc()}", redisClient=self.redisMessaging)
                     avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
