@@ -3580,12 +3580,16 @@ class Diameter:
                         mediaType = self.get_avp_data(media_avp, 520)[0]
                         self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
                         # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
-                        valid_media_types = [0, 1]
+                        valid_media_types = [0, 1, 4]
                         if int(mediaType, 16) not in valid_media_types:
                             self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
                         assert(int(mediaType, 16) in valid_media_types)
                         # At this point, we know the AAR is indicating a call setup, so we'll get the serving pgw information, then send a 
                         # RAR to the PGW over Gx, asking it to setup the dedicated bearer.
+                        
+                        if mediaType == 4:
+                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}, no charging rule needed", redisClient=self.redisMessaging)
+                            continue
 
                         try:
                             if emergencySubscriber and not imsEnabled:
