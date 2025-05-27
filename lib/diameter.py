@@ -3668,7 +3668,7 @@ class Diameter:
                             completedTftList = []
 
                             try:
-                                suppliedTfts = self.get_avp_data(avps, 507)
+                                suppliedTfts = self.get_avp_data(media_avp, 507)
                                 if suppliedTfts:
                                     if isinstance(suppliedTfts, list):
                                         self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] P-CSCF provided TFTs", redisClient=self.redisMessaging)
@@ -3701,11 +3701,11 @@ class Diameter:
                                 self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error using TFTs from PCSCF: {traceback.format_exc()}", redisClient=self.redisMessaging)
                             if not suppliedTfts:
                                 try:
-                                    sdpOffer = self.get_avp_data(avps, 524)[0]
+                                    sdpOffer = self.get_avp_data(media_avp, 524)[0]
                                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer raw: {sdpOffer}", redisClient=self.redisMessaging)
                                     sdpOffer = binascii.unhexlify(sdpOffer).decode('utf-8')
                                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Offer decoded: {sdpOffer}", redisClient=self.redisMessaging)
-                                    sdpAnswer = self.get_avp_data(avps, 524)[1]
+                                    sdpAnswer = self.get_avp_data(media_avp, 524)[1]
                                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer raw: {sdpAnswer}", redisClient=self.redisMessaging)
                                     sdpAnswer = binascii.unhexlify(sdpAnswer).decode('utf-8')
                                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Got SDP Answer decoded: {sdpAnswer}", redisClient=self.redisMessaging)
