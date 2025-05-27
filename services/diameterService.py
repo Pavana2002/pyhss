@@ -182,7 +182,9 @@ class DiameterService:
             await(self.logTool.logAsync(service='Diameter', level='info', message=f"[Diameter] [logActivePeers] {len(self.activePeers)} Active Peers {activePeers}"))
 
             if isinstance(activePeers, dict):
-                for peerKey, peerData in activePeers.items():
+                #for peerKey, peerData in activePeers.items():
+                for peerKey in list(activePeers.keys()):
+                    peerData = activePeers[peerKey]
                     peerHost = peerData.Hostname
                     peerIsConnected = peerData.Connected
                     if peerHost and peerIsConnected:
