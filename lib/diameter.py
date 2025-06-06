@@ -1760,7 +1760,7 @@ class Diameter:
     #3GPP S6a/S6d Update Location Answer
     def Answer_16777251_316(self, packet_vars, avps):
         
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_316: 3GPP S6a/S6d Update Location Answer", redisClient=self.redisMessaging)
+        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_316: 3GPP S6a/S6d Update Location Answer" + str(self.OriginHost) + str(self.OriginRealm)", redisClient=self.redisMessaging)
         
         avp = ''                                                                                    #Initiate empty var AVP
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
@@ -2073,7 +2073,7 @@ class Diameter:
     #3GPP S6a/S6d Authentication Information Answer
     def Answer_16777251_318(self, packet_vars, avps):
         
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_318: 3GPP S6a/S6d Authentication Information Answer", redisClient=self.redisMessaging)
+        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_318: 3GPP S6a/S6d Authentication Information Answer" + str(self.OriginHost) + str(self.OriginRealm), redisClient=self.redisMessaging)
         
         self.logTool.log(service='HSS', level='debug', message=f"AIA AVPS: {avps}", redisClient=self.redisMessaging)
         imsi = self.get_avp_data(avps, 1)[0]                                                             #Get IMSI from User-Name AVP in request
@@ -2355,6 +2355,9 @@ class Diameter:
 
             OriginRealm = self.get_avp_data(avps, 296)[0]                          #Get OriginRealm from AVP
             OriginRealm = binascii.unhexlify(OriginRealm).decode('utf-8')      #Format it
+            
+            self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_272: 3GPP Gx Credit Control Answer" + str(OriginHost) + str(OriginRealm), redisClient=self.redisMessaging)
+            self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_272: 3GPP Gx Credit Control Answer" + str(self.OriginHost) + str(self.OriginRealm), redisClient=self.redisMessaging)
 
             try:        #Check if we have a record-route set as that's where we'll need to send the response
                 remote_peer = self.get_avp_data(avps, 282)[-1]                          #Get first record-route header
