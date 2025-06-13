@@ -1658,9 +1658,6 @@ class Diameter:
 
     #Capabilities Exchange Answer
     def Answer_257(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_257: Capabilities Exchange Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP 
         avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))                                 #Result Code (DIAMETER_SUCCESS (2001))
         avp += self.generate_avp(264, 40, self.OriginHost)                                          #Origin Host
@@ -1759,9 +1756,6 @@ class Diameter:
 
     #3GPP S6a/S6d Update Location Answer
     def Answer_16777251_316(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_316: 3GPP S6a/S6d Update Location Answer {self.OriginHost} {self.OriginRealm}", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
         avp += self.generate_avp(263, 40, session_id)                                                    #Session-ID AVP set
@@ -2072,9 +2066,6 @@ class Diameter:
 
     #3GPP S6a/S6d Authentication Information Answer
     def Answer_16777251_318(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777251_318: 3GPP S6a/S6d Authentication Information Answer {self.OriginHost} {self.OriginRealm}", redisClient=self.redisMessaging)
-        
         self.logTool.log(service='HSS', level='debug', message=f"AIA AVPS: {avps}", redisClient=self.redisMessaging)
         imsi = self.get_avp_data(avps, 1)[0]                                                             #Get IMSI from User-Name AVP in request
         imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
@@ -2331,9 +2322,6 @@ class Diameter:
 
     #3GPP Gx Credit Control Answer
     def Answer_16777238_272(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_272: 3GPP Gx Credit Control Answer", redisClient=self.redisMessaging)
-        
         try:
             CC_Request_Type = self.get_avp_data(avps, 416)[0]
             CC_Request_Number = self.get_avp_data(avps, 415)[0]
@@ -2355,9 +2343,6 @@ class Diameter:
 
             OriginRealm = self.get_avp_data(avps, 296)[0]                          #Get OriginRealm from AVP
             OriginRealm = binascii.unhexlify(OriginRealm).decode('utf-8')      #Format it
-            
-            self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_272: 3GPP Gx Credit Control Answer {OriginHost} {OriginRealm}", redisClient=self.redisMessaging)
-            self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_272: 3GPP Gx Credit Control Answer {self.OriginHost} {self.OriginRealm}", redisClient=self.redisMessaging)
 
             try:        #Check if we have a record-route set as that's where we'll need to send the response
                 remote_peer = self.get_avp_data(avps, 282)[-1]                          #Get first record-route header
@@ -2752,8 +2737,6 @@ class Diameter:
     #3GPP Cx User Authorization Answer
     def Answer_16777216_300(self, packet_vars, avps):
         
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777216_300: 3GPP Cx User Authorization Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                         #Initiate empty var AVP                                                                                           #Session-ID
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
         avp += self.generate_avp(263, 40, session_id)                                                    #Set session ID to received session ID
@@ -2857,9 +2840,6 @@ class Diameter:
 
     #3GPP Cx Server Assignment Answer
     def Answer_16777216_301(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777216_301: 3GPP Cx Server Assignment Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
         avp += self.generate_avp(263, 40, session_id)                                                    #Set session ID to received session ID
@@ -2953,9 +2933,6 @@ class Diameter:
 
     #3GPP Cx Location Information Answer
     def Answer_16777216_302(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777216_302: 3GPP Cx Location Information Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
         avp += self.generate_avp(263, 40, session_id)                                                    #Set session ID to received session ID
@@ -3017,9 +2994,6 @@ class Diameter:
 
     #3GPP Cx Multimedia Authentication Answer
     def Answer_16777216_303(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777216_303: 3GPP Cx Multimedia Authentication Answer", redisClient=self.redisMessaging)
-        
         public_identity = self.get_avp_data(avps, 601)[0]
         public_identity = binascii.unhexlify(public_identity).decode('utf-8')
         self.logTool.log(service='HSS', level='debug', message="Got MAR for public_identity : " + str(public_identity), redisClient=self.redisMessaging)
@@ -3173,9 +3147,6 @@ class Diameter:
 
     #3GPP Cx Registration Termination Answer
     def Answer_16777216_304(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777216_304: 3GPP Cx Registration Termination Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
         avp += self.generate_avp(263, 40, session_id)                                                    #Set session ID to received session ID
@@ -3201,9 +3172,6 @@ class Diameter:
 
     #3GPP Sh User-Data Answer
     def Answer_16777217_306(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777217_306: 3GPP Sh User-Data Answer", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
 
         #Define values so we can check if they've been changed
@@ -3398,8 +3366,6 @@ class Diameter:
     #3GPP Sh Profile-Update Answer
     def Answer_16777217_307(self, packet_vars, avps):
         
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777217_307: 3GPP Sh Profile-Update Answer", redisClient=self.redisMessaging)
-        
 
         #Get IMSI
         imsi = self.get_avp_data(avps, 1)[0]                                                        #Get IMSI from User-Name AVP in request
@@ -3436,9 +3402,6 @@ class Diameter:
 
     #3GPP Rx - AA Answer (AAA)
     def Answer_16777236_265(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777236_265: 3GPP Rx - AA Answer (AAA) {self.OriginHost} {self.OriginRealm}", redisClient=self.redisMessaging)
-        
         try:
             """
             Generates a response to a provided AAR.
@@ -3914,9 +3877,6 @@ class Diameter:
 
     #3GPP Rx - Re Auth Answer (RAA)
     def Answer_16777236_258(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777236_258: 3GPP Rx - Re Auth Answer (RAA)", redisClient=self.redisMessaging)
-        
         try:
             """
             Generates a response to a provided RAR.
@@ -3980,9 +3940,6 @@ class Diameter:
 
     #3GPP Rx - Session Termination Answer (STA)
     def Answer_16777236_275(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777236_275: 3GPP Rx - Session Termination Answer (STA)", redisClient=self.redisMessaging)
-        
         try:
             """
             Triggers a Re-Auth-Request to the PGW, the returns a Session Termination Answer.
@@ -4101,9 +4058,6 @@ class Diameter:
 
     #3GPP Rx - Abort Session Answer (ASA)
     def Answer_16777236_274(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777236_274: 3GPP Rx - Abort Session Answer (ASA)", redisClient=self.redisMessaging)
-         
         try:
             """
             Generates a response to a provided ASR.
@@ -4123,9 +4077,6 @@ class Diameter:
 
     # Re Auth Answer
     def Answer_16777238_258(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777238_258: Re Auth Answer", redisClient=self.redisMessaging)
-        
         try:
             avp = ''
             session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
@@ -4140,8 +4091,6 @@ class Diameter:
 
     #3GPP S13 - ME-Identity-Check Answer
     def Answer_16777252_324(self, packet_vars, avps):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Answer_16777252_324: 3GPP S13 - ME-Identity-Check Answer", redisClient=self.redisMessaging)
 
         #Get IMSI
         try:
@@ -4303,9 +4252,6 @@ class Diameter:
 
     #Capabilities Exchange Request
     def Request_257(self):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_257: 3GPP S13 - Capabilities Exchange Request", redisClient=self.redisMessaging)
-        
         avp = ''
         avp += self.generate_avp(264, 40, self.OriginHost)                                                    #Origin Host
         avp += self.generate_avp(296, 40, self.OriginRealm)                                                   #Origin Realm
@@ -4342,10 +4288,7 @@ class Diameter:
         return response
 
     #3GPP S6a/S6d Authentication Information Request
-    def Request_16777251_318(self, imsi, DestinationHost, DestinationRealm, requested_vectors=1):    
-
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777251_318: 3GPP S6a/S6d Authentication Information Request", redisClient=self.redisMessaging)
-        
+    def Request_16777251_318(self, imsi, DestinationHost, DestinationRealm, requested_vectors=1):                                                             
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_s6a'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session State set AVP
@@ -4368,9 +4311,6 @@ class Diameter:
 
     #3GPP S6a/S6d Update Location Request (ULR)
     def Request_16777251_316(self, imsi, DestinationRealm):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777251_316: 3GPP S6a/S6d Update Location Request (ULR)", redisClient=self.redisMessaging)
-        
         mcc = imsi[0:3]
         mnc = imsi[3:5]
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
@@ -4406,9 +4346,6 @@ class Diameter:
 
     #3GPP S6a/S6d NOtify Request NOR
     def Request_16777251_323(self, imsi, DestinationRealm, DestinationHost):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777251_323: 3GPP S6a/S6d NOtify Request NOR", redisClient=self.redisMessaging)
-        
         avp = ''
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_s6a'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))               #Session State set AVP
@@ -4443,9 +4380,6 @@ class Diameter:
 
     #3GPP S6a/S6d Insert Subscriber Data Request (ISD)
     def Request_16777251_319(self, imsi, DestinationRealm, DestinationHost=None, PcscfRestoration=False, GetLocation=False, **kwargs):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777251_319: 3GPP S6a/S6d Insert Subscriber Data Request (ISD)", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_s6a'                 #Session ID generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))     #Session ID set AVP
@@ -4641,10 +4575,7 @@ class Diameter:
 
     #3GPP Cx Location Information Request (LIR)
     #ToDo - Check the command code here...
-    def Request_16777216_302(self, sipaor):    
-
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777216_302: 3GPP Cx Location Information Request (LIR)", redisClient=self.redisMessaging)
-        
+    def Request_16777216_302(self, sipaor):                                                             
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_cx'                           #Session state generate
         #Auth Session state
@@ -4664,9 +4595,6 @@ class Diameter:
 
     #3GPP Cx User Authorization Request (UAR)
     def Request_16777216_300(self, imsi, domain):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777216_300: 3GPP Cx User Authorization Request (UAR)", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_cx'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session State set AVP
@@ -4683,9 +4611,6 @@ class Diameter:
 
     #3GPP Cx Server Assignment Request (SAR)
     def Request_16777216_301(self, imsi, domain, server_assignment_type):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777216_301: 3GPP Cx Server Assignment Request (SAR)", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_cx'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session Session ID
@@ -4704,9 +4629,6 @@ class Diameter:
 
     #3GPP Cx Multimedia Authentication Request (MAR)
     def Request_16777216_303(self, imsi, domain):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777216_303: 3GPP Cx Multimedia Authentication Request (MAR)", redisClient=self.redisMessaging)
-        
         avp = ''                                                                                    #Initiate empty var AVP                                                                                           #Session-ID
         sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_cx'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session State set AVP
@@ -4792,10 +4714,6 @@ class Diameter:
 
     #3GPP S13 - ME-Identity-Check Request
     def Request_16777252_324(self, imsi, imei, software_version):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777252_324: 3GPP S13 - ME-Identity-Check Request", redisClient=self.redisMessaging)
-        
-        
         avp = ''
         avp += self.generate_avp(260, 40, "0000010a4000000c000028af000001024000000c01000024")           #Vendor-Specific-Application-ID for S13
         avp += self.generate_avp(277, 40, "00000001")                                                    #Auth-Session-State (Not maintained)        
@@ -4864,9 +4782,6 @@ class Diameter:
 
     #3GPP Gx - Credit Control Request
     def Request_16777238_272(self, imsi, apn, ccr_type, destinationHost, destinationRealm, sessionId=None):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777238_272: 3GPP Gx - Credit Control Request", redisClient=self.redisMessaging)
-        
         avp = ''
         if sessionId == None:
             sessionid = 'nickpc.localdomain;' + self.generate_id(5) + ';1;app_gx'                           #Session state generate
@@ -4922,9 +4837,6 @@ class Diameter:
 
     #3GPP Gx - Re Auth Request
     def Request_16777238_258(self, sessionId, servingPgw, servingRealm, chargingRules=None, ueIp=None, chargingRuleAction='install', chargingRuleName=None):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777238_258: 3GPP Gx - Re Auth Request", redisClient=self.redisMessaging)
-        
         avp = ''
         self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Request_16777238_258] [RAR] Creating Re Auth Request", redisClient=self.redisMessaging)
 
@@ -4954,9 +4866,6 @@ class Diameter:
 
     #3GPP Gy - Credit Control Request
     def Request_4_272(self, sessionid, imsi, CC_Request_Type, input_octets, output_octets):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_4_272: 3GPP Gy - Credit Control Request", redisClient=self.redisMessaging)
-        
         avp = ''
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session-Id set AVP
 
@@ -5063,9 +4972,6 @@ class Diameter:
 
     #3GPP S13 - ME-Identity-Check Request
     def Request_16777252_324(self, imei, imsi):
-        
-        self.logTool.log(service='Diameter', level='info', message=f"Request_16777252_324: 3GPP S13 - ME-Identity-Check Request", redisClient=self.redisMessaging)
-        
         avp = ''                                         
         sessionid = 'nickpc.localdomain;' + self.generate_id(5) + ';1;app_s13'                           #Session state generate
         avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))          #Session State set AVP
