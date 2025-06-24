@@ -17,15 +17,19 @@ import uuid
 import socket
 import pprint
 import S6a_crypt
+from gsup.protocol.ipa_peer import IPAPeerRole
 from messaging import RedisMessaging
 import yaml
 import json
 import socket
 import traceback
 
-with open("../config.yaml", 'r') as stream:
-    config = (yaml.safe_load(stream))
-
+try:
+    with open("../config.yaml", 'r') as stream:
+        config = (yaml.safe_load(stream))
+except:
+    with open("config.yaml", 'r') as stream:
+        config = (yaml.safe_load(stream))
 
 Base = declarative_base()
 class APN(Base):
@@ -73,6 +77,7 @@ class AUC(Base):
     psk = Column(String(128), doc='PSK')
     des = Column(String(128), doc='DES')
     adm1 = Column(String(20), doc='ADM1')
+    algo = Column(String(20), default='3', doc='2G Authentication Algorithm (1 = Comp128v1, 2 = Comp128v2, 3 = Comp128v3, All Other= 3G auth with 2g keys from 3G Milenage)')
     misc1 = Column(String(128), doc='For misc data storage 1')
     misc2 = Column(String(128), doc='For misc data storage 2')
     misc3 = Column(String(128), doc='For misc data storage 3')
@@ -99,6 +104,20 @@ class SUBSCRIBER(Base):
     serving_mme_timestamp = Column(DateTime, doc='Timestamp of attach to MME')
     serving_mme_realm = Column(String(512), doc='Realm of serving mme')
     serving_mme_peer = Column(String(512), doc='Diameter peer used to reach MME then ; then the HSS the Diameter peer is connected to')
+    serving_msc = Column(String(512), doc='MSC serving this subscriber')
+    serving_msc_timestamp = Column(DateTime, doc='Timestamp of attach to MSC')
+    serving_vlr = Column(String(512), doc='VLR serving this subscriber')
+    serving_vlr_timestamp = Column(DateTime, doc='Timestamp of attach to VLR')    
+    serving_sgsn = Column(String(512), doc='SGSN serving this subscriber')
+    serving_sgsn_timestamp = Column(DateTime, doc='Timestamp of attach to SGSN')
+    last_seen_eci = Column(String(64), doc='Last ECI seen serving this subscriber')
+    last_seen_enodeb_id = Column(String(64), doc='Last eNodeB seen serving this subscriber')
+    last_seen_cell_id = Column(String(64), doc='Last Cell ID seen serving this subscriber')
+    last_seen_tac = Column(String(64), doc='Last Tracking Area Code seen serving this subscriber')
+    last_seen_mcc = Column(String(3), doc='Last MCC seen serving this subscriber')
+    last_seen_mnc = Column(String(3), doc='Last MNC seen serving this subscriber')
+    last_location_update_timestamp = Column(DateTime, doc='Timestamp of last CCR providing location information')
+
     last_modified = Column(String(100), default=datetime.datetime.now(tz=timezone.utc), doc='Timestamp of last modification')
     operation_logs = relationship("SUBSCRIBER_OPERATION_LOG", back_populates="subscriber")
 
@@ -338,9 +357,13 @@ class SUBSCRIBER_ATTRIBUTES_OPERATION_LOG(OPERATION_LOG_BASE):
 class Database:
 
     def __init__(self, logTool, redisMessaging=None):
-        with open("../config.yaml", 'r') as stream:
-            self.config = (yaml.safe_load(stream))
-        
+        try:
+            with open("../config.yaml", 'r') as stream:
+                self.config = (yaml.safe_load(stream))
+        except:
+            with open("config.yaml", 'r') as stream:
+                self.config = (yaml.safe_load(stream))
+
         self.redisUseUnixSocket = self.config.get('redis', {}).get('useUnixSocket', False)
         self.redisUnixSocketPath = self.config.get('redis', {}).get('unixSocketPath', '/var/run/redis/redis-server.sock')
         self.redisHost = self.config.get('redis', {}).get('host', 'localhost')
@@ -1607,6 +1630,25 @@ class Database:
             self.Update_AuC(auc_id, sqn=key_data['sqn']+100)
             return vector_dict
 
+        elif action == "aka":
+            rand, autn, xres, ck, ik = S6a_crypt.generate_maa_vector(key_data['ki'], key_data['opc'], key_data['amf'], key_data['sqn'], kwargs['plmn'])
+            vector_list = []
+            self.logTool.log(service='Database', level='debug', message="Generating " + str(kwargs['requested_vectors']) + " vectors for GSM use", redisClient=self.redisMessaging)
+            while kwargs['requested_vectors'] != 0:
+                self.logTool.log(service='Database', level='debug', message="RAND is: " + str(rand), redisClient=self.redisMessaging)
+                self.logTool.log(service='Database', level='debug', message="AUTN is: " + str(autn), redisClient=self.redisMessaging)
+
+                vector_dict['rand'] = binascii.hexlify(rand).decode("utf-8")
+                vector_dict['autn'] = binascii.hexlify(autn).decode("utf-8")
+                vector_dict['xres'] = binascii.hexlify(xres).decode("utf-8")
+                vector_dict['ck'] = binascii.hexlify(ck).decode("utf-8")
+                vector_dict['ik'] = binascii.hexlify(ik).decode("utf-8")
+
+                kwargs['requested_vectors'] = kwargs['requested_vectors'] - 1
+                vector_list.append(vector_dict)
+            self.Update_AuC(auc_id, sqn=key_data['sqn']+100)
+            return vector_list
+
         elif action == "2g3g":
             # Mask first bit of AMF
             key_data['amf'] = '0' + key_data['amf'][1:]
@@ -1685,6 +1727,77 @@ class Database:
         self.logTool.log(service='Database', level='debug', message=f"Sent Geored update for AuC: {auc_id} with SQN {sqn}", redisClient=self.redisMessaging)
 
         return
+
+    def update_hlr(self, imsi: str, role: IPAPeerRole, new_id: Optional[str]) -> str:
+        self.logTool.log(service='Database', level='debug', message=f"Updating GSUP record {role} for IMSI: {imsi} with new ID: {new_id}", redisClient=self.redisMessaging)
+        Session = sessionmaker(bind=self.engine)
+        session = Session()
+
+        try:
+            subscriber = session.query(SUBSCRIBER).filter_by(imsi=imsi).one()
+            field = None
+            if role == IPAPeerRole.SGSN:
+                field = "serving_sgsn"
+            elif role == IPAPeerRole.MSC:
+                field = "serving_msc"
+            elif role == "map_msc":
+                field = "serving_msc"
+            elif role == "map_vlr":
+                field = "serving_vlr"
+
+            old_id = getattr(subscriber, field)
+            setattr(subscriber, field, new_id)
+            setattr(subscriber, f"{field}_timestamp", datetime.datetime.now(tz=timezone.utc))
+            session.commit()
+            return old_id
+
+        except Exception as e:
+            self.safe_close(session)
+            raise ValueError(str(e))
+
+
+    def update_subscriber_location(self, imsi: str, last_seen_eci=None, last_seen_enodeb_id=None, last_seen_cell_id=None, last_seen_tac=None, last_seen_mcc=None, last_seen_mnc=None, last_location_update_timestamp=None, propagate=True) -> str:
+        Session = sessionmaker(bind = self.engine)
+        session = Session()
+
+        try:
+            result = session.query(SUBSCRIBER).filter_by(imsi=imsi).one()
+            try:
+                self.logTool.log(service='Database', level='debug', message=f"Updating Subscriber Location for {imsi}", redisClient=self.redisMessaging)
+                if last_seen_eci:
+                    result.last_seen_eci = last_seen_eci
+                if last_seen_enodeb_id:
+                    result.last_seen_enodeb_id = last_seen_enodeb_id
+                if last_seen_cell_id:
+                    result.last_seen_cell_id = last_seen_cell_id
+                if last_seen_tac:
+                    result.last_seen_tac = last_seen_tac
+                if last_seen_mcc:
+                    result.last_seen_mcc = last_seen_mcc
+                if last_seen_mnc:
+                    result.last_seen_mnc = last_seen_mnc
+                if last_location_update_timestamp:
+                    result.last_location_update_timestamp = last_location_update_timestamp
+                session.commit()
+                objectData = self.GetObj(SUBSCRIBER, result.subscriber_id)
+                self.handleWebhook(objectData, 'PATCH')
+            except:
+                pass
+
+            if propagate == True:
+                if 'HSS' in self.config['geored'].get('sync_actions', []) and self.config['geored'].get('enabled', False) == True:
+                    self.logTool.log(service='Database', level='debug', message="Propagate Subscriber Location changes to Geographic PyHSS instances", redisClient=self.redisMessaging)
+                    self.handleGeored({"imsi": str(imsi), "last_seen_eci": last_seen_eci, "last_seen_enodeb_id": last_seen_enodeb_id,
+                                        "last_seen_cell_id": last_seen_cell_id, "last_seen_tac": last_seen_tac, "last_seen_mcc": last_seen_mcc,
+                                        "last_seen_mnc": last_seen_mnc, "last_location_update_timestamp": last_location_update_timestamp})
+                else:
+                    self.logTool.log(service='Database', level='debug', message="Config does not allow sync of IMS events", redisClient=self.redisMessaging)
+        except Exception as E:
+            self.logTool.log(service='Database', level='error', message="An error occurred, rolling back session: " + str(E), redisClient=self.redisMessaging)
+            self.safe_rollback(session)
+            raise
+        finally:
+            self.safe_close(session)
 
     def Update_Serving_MME(self, imsi, serving_mme, serving_mme_realm=None, serving_mme_peer=None, serving_mme_timestamp=None, propagate=True):
         self.logTool.log(service='Database', level='debug', message="Updating Serving MME for sub " + str(imsi) + " to MME " + str(serving_mme), redisClient=self.redisMessaging)
@@ -1774,7 +1887,6 @@ class Database:
             self.logTool.log(service='Database', level='error', message="Error occurred in Update_Serving_MME: " + str(E), redisClient=self.redisMessaging)
         finally:
             self.safe_close(session)
-
 
     def Update_Proxy_CSCF(self, imsi, proxy_cscf, pcscf_realm=None, pcscf_peer=None, pcscf_timestamp=None, pcscf_active_session=None, propagate=True):
         self.logTool.log(service='Database', level='debug', message="Update_Proxy_CSCF for sub " + str(imsi) + " to pcscf " + str(proxy_cscf) + " with realm " + str(pcscf_realm) + " and peer " + str(pcscf_peer) + " for session id " + str(pcscf_active_session), redisClient=self.redisMessaging)
