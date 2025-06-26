@@ -1,0 +1,14 @@
+[Unit]
+Description=PyHSS HSS Service
+PartOf=pyhss.service
+
+
+[Service]
+Environment="PYTHONUNBUFFERED=1"
+User=root
+WorkingDirectory=/etc/pyhss/services/
+ExecStart=python3 gsupService.py
+Restart=always
+
+[Install]
+WantedBy=pyhss.service
