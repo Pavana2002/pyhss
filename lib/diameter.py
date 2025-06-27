@@ -1822,21 +1822,24 @@ class Diameter:
         imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
         
         now = time.time()
-        # 🚨 Guard against stale or untracked sessions
-        if session_id not in active_sessions or (now - active_sessions.get(session_id, {}).get("created", 0)) > SESSION_TTL:
-            self.logTool.log(
-                service='HSS',
-                level='warning',
-                message=f"[ULA_SUPPRESS] Session-ID {session_id} not in active_sessions or expired. Dropping ULA.",
-                redisClient=self.redisMessaging
-            )
-            return None  # Silent drop or graceful error can go here
+        if session_id not in active_sessions:
+            # ✅ Update or reinforce the session (freshen timestamp)
+            active_sessions[session_id] = {
+                "imsi": imsi,
+                "created": now
+            }        
+        else:
+            # 🚨 Guard against stale or untracked sessions
+            if now - active_sessions[session_id]["created"] > SESSION_TTL:
+                self.logTool.log(
+                    service='HSS',
+                    level='warning',
+                    message=f"[ULA_SUPPRESS] Session-ID {session_id} not in active_sessions or expired. Dropping ULA.",
+                    redisClient=self.redisMessaging
+                )
+                return None  # Silent drop or graceful error can go here
 
-        # ✅ Update or reinforce the session (freshen timestamp)
-        active_sessions[session_id] = {
-            "imsi": imsi,
-            "created": now
-        }
+
     
         avp += self.generate_avp(263, 40, session_id)                                                    #Session-ID AVP set
         avp += self.generate_avp(264, 40, self.OriginHost)                                                    #Origin Host
