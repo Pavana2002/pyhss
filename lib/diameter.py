@@ -22,6 +22,10 @@ from baseModels import Peer, OutboundData
 import pydantic_core
 import xml.etree.ElementTree as ET
 
+# Simple in-memory store to track active IMSIs or Session-Ids
+active_sessions = {}
+
+
 class Diameter:
 
     def __init__(self, logTool, originHost: str="hss01", originRealm: str="epc.mnc999.mcc999.3gppnetwork.org", productName: str="PyHSS", mcc: str="999", mnc: str="999", redisMessaging=None):
@@ -1833,6 +1837,25 @@ class Diameter:
         APN_Configuration = ''
         imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
         imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
+        
+        if imsi not in active_sessions:
+            self.logTool.log(
+                service='HSS',
+                level='warning',
+                message=f"[ULA_SUPPRESS] IMSI {imsi} not found in active_sessions — ULA dropped",
+                redisClient=self.redisMessaging
+            )
+
+            # Send a graceful Diameter error (or just return None if silent drop is okay)
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))  # Optional: DIAMETER_ERROR_USER_UNKNOWN
+            response = self.generate_diameter_packet(
+                "01", "40", 316, 16777251,
+                packet_vars['hop-by-hop-identifier'],
+                packet_vars['end-to-end-identifier'],
+                avp
+            )
+            return response
+        
         try:
             subscriber_details = self.database.Get_Subscriber(imsi=imsi)                                               #Get subscriber details
             self.logTool.log(service='HSS', level='debug', message="Got back subscriber_details: " + str(subscriber_details), redisClient=self.redisMessaging)
