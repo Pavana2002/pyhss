@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 
 # Simple in-memory store to track active IMSIs or Session-Ids
 active_sessions = {}
-
+SESSION_TTL = 60  # seconds
 
 class Diameter:
 
@@ -1816,6 +1816,26 @@ class Diameter:
     def Answer_16777251_316(self, packet_vars, avps):
         avp = ''                                                                                    #Initiate empty var AVP
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
+        imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
+        imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
+        
+        now = time.time()
+        # 🚨 Guard against stale or untracked sessions
+        if session_id not in active_sessions or (now - active_sessions.get(session_id, {}).get("created", 0)) > SESSION_TTL:
+            self.logTool.log(
+                service='HSS',
+                level='warning',
+                message=f"[ULA_SUPPRESS] Session-ID {session_id} not in active_sessions or expired. Dropping ULA.",
+                redisClient=self.redisMessaging
+            )
+            return None  # Silent drop or graceful error can go here
+
+        # ✅ Update or reinforce the session (freshen timestamp)
+        active_sessions[session_id] = {
+            "imsi": imsi,
+            "created": now
+        }
+    
         avp += self.generate_avp(263, 40, session_id)                                                    #Session-ID AVP set
         avp += self.generate_avp(264, 40, self.OriginHost)                                                    #Origin Host
         avp += self.generate_avp(296, 40, self.OriginRealm)                                                   #Origin Realm
@@ -1835,26 +1855,8 @@ class Diameter:
 
         #APNs from DB
         APN_Configuration = ''
-        imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
-        imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
-        
-        if imsi not in active_sessions:
-            self.logTool.log(
-                service='HSS',
-                level='warning',
-                message=f"[ULA_SUPPRESS] IMSI {imsi} not found in active_sessions — ULA dropped",
-                redisClient=self.redisMessaging
-            )
-
-            # Send a graceful Diameter error (or just return None if silent drop is okay)
-            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))  # Optional: DIAMETER_ERROR_USER_UNKNOWN
-            response = self.generate_diameter_packet(
-                "01", "40", 316, 16777251,
-                packet_vars['hop-by-hop-identifier'],
-                packet_vars['end-to-end-identifier'],
-                avp
-            )
-            return response
+        #imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
+        #imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
         
         try:
             subscriber_details = self.database.Get_Subscriber(imsi=imsi)                                               #Get subscriber details
@@ -2780,7 +2782,7 @@ class Diameter:
 
                     except Exception as E:
                         self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Error in populating dynamic charging rules: " + str(E), redisClient=self.redisMessaging)
-
+                
             # CCR - Termination Request
             elif int(CC_Request_Type) == 3:
                 self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Request type for CCA is 3 - Termination", redisClient=self.redisMessaging)
@@ -5112,3 +5114,15 @@ class Diameter:
 
         response = self.generate_diameter_packet("01", "c0", 324, 16777252, self.generate_id(4), self.generate_id(4), avp)     #Generate Diameter packet
         return response
+
+# Define this below the Diameter class, outside any function
+def cleanup_sessions():
+    while True:
+        now = time.time()
+        for sid in list(active_sessions):
+            if now - active_sessions[sid]['created'] > SESSION_TTL:
+                del active_sessions[sid]
+        time.sleep(10)  # cleanup every 10 seconds
+
+# Start the thread outside the class as well
+threading.Thread(target=cleanup_sessions, daemon=True).start()
