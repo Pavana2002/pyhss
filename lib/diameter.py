@@ -21,12 +21,10 @@ import re
 from baseModels import Peer, OutboundData
 import pydantic_core
 import xml.etree.ElementTree as ET
-import threading
 
 
 # Simple in-memory store to track active IMSIs or Session-Ids
 active_sessions = {}
-SESSION_TTL = 60  # seconds
 
 class Diameter:
 
@@ -1821,25 +1819,11 @@ class Diameter:
         imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
         imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
         
-        now = time.time()
         if session_id not in active_sessions:
-            # ✅ Update or reinforce the session (freshen timestamp)
-            active_sessions[session_id] = {
-                "imsi": imsi,
-                "created": now
-            }        
-        else:
-            # 🚨 Guard against stale or untracked sessions
-            if now - active_sessions[session_id]["created"] > SESSION_TTL:
-                self.logTool.log(
-                    service='HSS',
-                    level='warning',
-                    message=f"[ULA_SUPPRESS] Session-ID {session_id} not in active_sessions or expired. Dropping ULA.",
-                    redisClient=self.redisMessaging
-                )
-                return None  # Silent drop or graceful error can go here
-
-
+            self.logTool.log(service='HSS', level='warning',
+                message=f"[ULA_SUPPRESS] Session-ID {session_id} not tracked — dropping ULA",
+                redisClient=self.redisMessaging)
+            return None
     
         avp += self.generate_avp(263, 40, session_id)                                                    #Session-ID AVP set
         avp += self.generate_avp(264, 40, self.OriginHost)                                                    #Origin Host
@@ -2568,6 +2552,9 @@ class Diameter:
                             """
                             If we've recieved a CCR-Terminate, delete the emergency subscriber.
                             """
+                            if session_id in active_sessions:
+                                del active_sessions[session_id]
+
                             try:
                                 ueIp = self.get_avp_data(avps, 8)[0]
                                 ueIp = str(self.hex_to_ip(ueIp))
@@ -2647,6 +2634,15 @@ class Diameter:
 
             # CCR - Initial Request
             if int(CC_Request_Type) == 1:
+                session_id = self.get_avp_data(avps, 263)[0]
+                imsi = self.get_avp_data(avps, 1)[0]
+                imsi = binascii.unhexlify(imsi).decode('utf-8')
+
+                active_sessions[session_id] = {
+                    "imsi": imsi,
+                    "created": time.time()
+                }
+
                 self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Request type for CCA is 1 - Initial", redisClient=self.redisMessaging)
 
                 #Get UE IP            
@@ -5120,14 +5116,3 @@ class Diameter:
         response = self.generate_diameter_packet("01", "c0", 324, 16777252, self.generate_id(4), self.generate_id(4), avp)     #Generate Diameter packet
         return response
 
-# Define this below the Diameter class, outside any function
-def cleanup_sessions():
-    while True:
-        now = time.time()
-        for sid in list(active_sessions):
-            if now - active_sessions[sid]['created'] > SESSION_TTL:
-                del active_sessions[sid]
-        time.sleep(10)  # cleanup every 10 seconds
-
-# Start the thread outside the class as well
-threading.Thread(target=cleanup_sessions, daemon=True).start()
