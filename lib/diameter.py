@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 import threading
 
 # Simple in-memory store to track active IMSIs or Session-Ids
-active_sessions = {}
+SESSION_TTL = 60  # seconds
 active_sessions = {}  # IMSI → {created, last_session_id}
 
 class Diameter:
