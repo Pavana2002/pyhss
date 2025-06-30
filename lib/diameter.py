@@ -729,60 +729,6 @@ class Diameter:
         except Exception as e:
             return ''
     
-    def decode_3gpp_user_location_info(self, hex_data):
-        data = bytes.fromhex(hex_data)
-        
-        geo_type = data[0]
-        
-        geo_type_names = {
-            0: "CGI", 1: "SAI", 2: "RAI", 128: "TAI", 129: "ECGI", 130: "TAI and ECGI",
-            131: "eNodeB ID", 132: "TAI and eNodeB ID", 133: "extended eNodeB ID",
-            134: "TAI and extended eNodeB ID", 135: "NCGI", 136: "5GS TAI",
-            137: "5GS TAI and NCGI", 138: "NG-RAN Node ID", 139: "5GS TAI and NG-RAN Node ID"
-        }
-        
-        result = {
-            "Geographic_Location_Type": geo_type,
-            "Geographic_Location_Type_Name": geo_type_names.get(geo_type, "Unknown")
-        }
-        
-        if geo_type == 130:
-            # TAI data is in bytes 1-5
-            tai_data = data[1:6]
-            
-            # ECGI data is in bytes 6-12
-            ecgi_data = data[6:]
-            
-            tai_plmn_hex = tai_data[0:3].hex()
-            ecgi_plmn_hex = ecgi_data[0:3].hex()
-            
-            tai_mcc, tai_mnc = self.DecodePLMN(tai_plmn_hex)
-            ecgi_mcc, ecgi_mnc = self.DecodePLMN(ecgi_plmn_hex)
-            
-            tai_tac = int.from_bytes(tai_data[3:5], byteorder='big')
-            ecgi_eci = int.from_bytes(ecgi_data[3:7], byteorder='big')
-            
-            enodeb_id = (ecgi_eci >> 8) & 0xFFFFF
-            cell_id = ecgi_eci & 0xFF
-
-            result.update({
-                "tai": {
-                    "mcc": str(tai_mcc),
-                    "mnc": str(tai_mnc),
-                    "tac": str(tai_tac)
-                },
-                "ecgi": {
-                    "mcc": str(ecgi_mcc),
-                    "mnc": str(ecgi_mnc),
-                    "eci": str(ecgi_eci),
-                    "enodeb_id": str(enodeb_id),
-                    "cell_id": str(cell_id)
-                }
-            })
-        
-        return result
-
-
     def getDraPeers(self) -> list:
         try:
             filteredConnectedPeers = []
@@ -2683,34 +2629,6 @@ class Diameter:
                 remote_peer = remote_peer + ";" + str(self.config['hss']['OriginHost'])
                 self.database.Update_Serving_APN(imsi=imsi, apn=apn, pcrf_session_id=binascii.unhexlify(session_id).decode(), serving_pgw=OriginHost, subscriber_routing=str(ue_ip), serving_pgw_realm=OriginRealm, serving_pgw_peer=remote_peer)
 
-                # Update Subscriber location information
-                try:
-                    default_eps_bearer_qos = self.get_avp_data(avps, 1049)[0]
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] default_eps_bearer_qos: {default_eps_bearer_qos}", redisClient=self.redisMessaging)
-
-                    default_eps_bearer_3gpp_user_location_info = self.decode_3gpp_user_location_info(self.get_avp_data(default_eps_bearer_qos, 22)[0])
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] default_eps_bearer_3gpp_user_location_info: {default_eps_bearer_3gpp_user_location_info}", redisClient=self.redisMessaging)
-
-                    last_seen_eci = default_eps_bearer_3gpp_user_location_info.get('ecgi', {}).get('eci', None)
-                    last_seen_enodeb_id = default_eps_bearer_3gpp_user_location_info.get('ecgi', {}).get('enodeb_id', None)
-                    last_seen_cell_id = default_eps_bearer_3gpp_user_location_info.get('ecgi', {}).get('cell_id', None)
-                    last_seen_tac = default_eps_bearer_3gpp_user_location_info.get('tai', {}).get('tac', None)
-                    last_seen_mcc = default_eps_bearer_3gpp_user_location_info.get('tai', {}).get('mcc', None)
-                    last_seen_mnc = default_eps_bearer_3gpp_user_location_info.get('tai', {}).get('mnc', None)
-                    last_location_update_timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
-
-                    self.database.update_subscriber_location(imsi=imsi,
-                                                            last_seen_eci=last_seen_eci,
-                                                            last_seen_enodeb_id=last_seen_enodeb_id,
-                                                            last_seen_cell_id=last_seen_cell_id,
-                                                            last_seen_tac=last_seen_tac,
-                                                            last_seen_mcc=last_seen_mcc,
-                                                            last_seen_mnc=last_seen_mnc,
-                                                            last_location_update_timestamp=last_location_update_timestamp,
-                                                            propagate=True)
-
-                except Exception as e:
-                    pass
 
                 #Supported-Features(628) (Gx feature list)
                 avp += self.generate_vendor_avp(628, "80", 10415, "0000010a4000000c000028af0000027580000010000028af000000010000027680000010000028af0000000b")
@@ -2788,54 +2706,42 @@ class Diameter:
 
                     except Exception as E:
                         self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Error in populating dynamic charging rules: " + str(E), redisClient=self.redisMessaging)
-                
+
             # CCR - Termination Request
             elif int(CC_Request_Type) == 3:
                 self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Request type for CCA is 3 - Termination", redisClient=self.redisMessaging)
-                session_id_string = str(binascii.unhexlify(session_id).decode())
-                subscriber_details = self.database.Get_Subscriber(imsi=imsi)
-                stored_apn = self.database.Get_APN_by_Name(apn=apn)
-                if subscriber_details and stored_apn:
-                    matching_subscriber_id = subscriber_details.get('subscriber_id', None)
-                    matching_apn_id = stored_apn.get('apn_id', None)
-                    serving_apn = self.database.Get_Serving_APN(subscriber_id=matching_subscriber_id, apn_id=matching_apn_id)
-                    if serving_apn:
-                        serving_apn_session_id = serving_apn.get('pcrf_session_id', "")
-                        if serving_apn_session_id == session_id_string:
-                            try:
-                                ocsNotificationBody = {
-                                        'notification_type': 'ocs',
-                                        'timestamp': time.time_ns(),
-                                        'operation': 'POST',
-                                        'headers': {'Content-Type': 'application/json'},
-                                        'body': {
-                                        'event': 'terminate',
-                                        'subscriber': {
-                                        'imsi': imsi,
-                                        'apn': apn,
-                                        'pcrf_session_id': session_id_string
-                                        }
-                                    }
-                                }
-                                self.redisMessaging.sendMessage(queue=f'webhook', message=json.dumps(ocsNotificationBody), queueExpiry=120, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='webhook')
-                            except Exception as e:
-                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed queueing OCS notification to redis: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                            if 'ims' in apn:
-                                    try:
-                                        self.database.Update_Serving_CSCF(imsi=imsi, serving_cscf=None)
-                                        self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=None)
-                                        self.database.Update_Serving_APN(imsi=imsi, apn=apn, pcrf_session_id=session_id_string, serving_pgw=None, subscriber_routing='')
-                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Successfully cleared stored IMS state", redisClient=self.redisMessaging)
-                                    except Exception as e:
-                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed to clear stored IMS state: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                            else:
-                                    try:
-                                        self.database.Update_Serving_APN(imsi=imsi, apn=apn, pcrf_session_id=session_id_string, serving_pgw=None, subscriber_routing='')
-                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Successfully cleared stored state for: {apn}", redisClient=self.redisMessaging)
-                                    except Exception as e:
-                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed to clear apn state for {apn}: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                try:
+                    ocsNotificationBody = {
+                            'notification_type': 'ocs',
+                            'timestamp': time.time_ns(),
+                            'operation': 'POST',
+                            'headers': {'Content-Type': 'application/json'},
+                            'body': {
+                            'event': 'terminate',
+                            'subscriber': {
+                            'imsi': imsi,
+                            'apn': apn,
+                            'pcrf_session_id': binascii.unhexlify(session_id).decode()
+                            }
+                        }
+                    }
+                    self.redisMessaging.sendMessage(queue=f'webhook', message=json.dumps(ocsNotificationBody), queueExpiry=120, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='webhook')
+                except Exception as e:
+                    self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed queueing OCS notification to redis: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                if 'ims' in apn:
+                        try:
+                            self.database.Update_Serving_CSCF(imsi=imsi, serving_cscf=None)
+                            self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=None)
+                            self.database.Update_Serving_APN(imsi=imsi, apn=apn, pcrf_session_id=str(binascii.unhexlify(session_id).decode()), serving_pgw=None, subscriber_routing='')
+                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Successfully cleared stored IMS state", redisClient=self.redisMessaging)
+                        except Exception as e:
+                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed to clear stored IMS state: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 else:
-                    pass
+                        try:
+                            self.database.Update_Serving_APN(imsi=imsi, apn=apn, pcrf_session_id=str(binascii.unhexlify(session_id).decode()), serving_pgw=None, subscriber_routing='')
+                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Successfully cleared stored state for: {apn}", redisClient=self.redisMessaging)
+                        except Exception as e:
+                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777238_272] [CCA] Failed to clear apn state for {apn}: {traceback.format_exc()}", redisClient=self.redisMessaging)
 
             avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))                                           #Result Code (DIAMETER_SUCCESS (2001))
             response = self.generate_diameter_packet("01", "40", 272, 16777238, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet

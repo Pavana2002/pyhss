@@ -108,21 +108,3 @@ class Banners:
 
 """
         return bannerText
-
-    def gsupService(self) -> str:
-        bannerText = """
-
-         ######            ##   ##   #####    #####  
-         ##   ##           ##   ##  ##   ##  ##   ## 
-         ##   ##  ##  ##   ##   ##  ##       ##      
-         ######   ##  ##   #######   #####    #####  
-         ##       ##  ##   ##   ##       ##       ## 
-         ##       ##  ##   ##   ##  ##   ##  ##   ## 
-         ##        #####   ##   ##   #####    #####  
-                      ##                             
-                   ####                              
-
-                        GSUP Service
-
-        """
-        return bannerText
