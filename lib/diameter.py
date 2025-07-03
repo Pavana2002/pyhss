@@ -4221,26 +4221,38 @@ class Diameter:
     #3GPP S13 - ME-Identity-Check Answer
     def Answer_16777252_324(self, packet_vars, avps):
 
+        avp = ''                                                                                        #Initiate empty var AVP
+        imei = ''
+        imsi = 'unknown'
+        
         #Get IMSI
         try:
-            imei = ''
-            imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
-            imsi = binascii.unhexlify(imsi).decode('utf-8')                                                 #Convert IMSI
-            #avp += self.generate_avp(1, 40, self.string_to_hex(imsi))                                      #Username (IMSI)
-            self.logTool.log(service='HSS', level='debug', message="Got IMSI with value " + str(imsi), redisClient=self.redisMessaging)
+            #imei = ''
+            imsi_raw = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
+            if imsi_raw:
+                imsi = binascii.unhexlify(imsi_raw).decode('utf-8')                                                 #Convert IMSI
+                self.logTool.log(service='HSS', level='debug', message=f"Got IMSI: {imsi}", redisClient=self.redisMessaging)
+            else:
+                self.logTool.log(service='HSS', level='warning', message="IMSI missing from ECR", redisClient=self.redisMessaging)
         except Exception as e:
-            self.logTool.log(service='HSS', level='debug', message="Failed to get IMSI from LCS-Routing-Info-Request", redisClient=self.redisMessaging)
-            self.logTool.log(service='HSS', level='debug', message="Error was: " + str(e), redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='error', message=f"IMSI decoding failed: {e}", redisClient=self.redisMessaging)
 
         try:
             #Get IMEI
-            for sub_avp in self.get_avp_data(avps, 1401)[0]:
-                self.logTool.log(service='HSS', level='debug', message="Evaluating sub_avp AVP " + str(sub_avp) + " to find IMSI", redisClient=self.redisMessaging)
-                if sub_avp['avp_code'] == 1402:
-                    imei = binascii.unhexlify(sub_avp['misc_data']).decode('utf-8')
-                    self.logTool.log(service='HSS', level='debug', message="Found IMEI " + str(imei), redisClient=self.redisMessaging)
-
-            avp = ''                                                                                        #Initiate empty var AVP
+            imei_group = self.get_avp_data(avps, 1401)[0]:
+            if imei_group:
+                for sub_avp in imei_group:
+                    self.logTool.log(service='HSS', level='debug', message="Evaluating sub_avp AVP " + str(sub_avp) + " to find IMSI", redisClient=self.redisMessaging)
+                    if sub_avp['avp_code'] == 1402:
+                        imei = binascii.unhexlify(sub_avp['misc_data']).decode('utf-8')
+                        self.logTool.log(service='HSS', level='debug', message="Found IMEI " + str(imei), redisClient=self.redisMessaging)
+            else:
+                self.logTool.log(service='HSS', level='warning', message="IMEI container AVP 1401 missing", redisClient=self.redisMessaging)
+        except Exception as e:
+            self.logTool.log(service='HSS', level='error', message=f"IMEI extraction failed: {e}", redisClient=self.redisMessaging)
+        
+        try:
+            #avp = ''                                                                                        #Initiate empty var AVP
             session_id = self.get_avp_data(avps, 263)[0]                                                    #Get Session-ID
             avp += self.generate_avp(263, 40, session_id)                                                   #Set session ID to received session ID
             avp += self.generate_avp(260, 40, "0000010a4000000c000028af000001024000000c01000024")           #Vendor-Specific-Application-ID for S13
