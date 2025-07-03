@@ -4239,7 +4239,7 @@ class Diameter:
 
         try:
             #Get IMEI
-            imei_group = self.get_avp_data(avps, 1401)[0]:
+            imei_group = self.get_avp_data(avps, 1401)[0]
             if imei_group:
                 for sub_avp in imei_group:
                     self.logTool.log(service='HSS', level='debug', message="Evaluating sub_avp AVP " + str(sub_avp) + " to find IMSI", redisClient=self.redisMessaging)
