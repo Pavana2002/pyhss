@@ -49,9 +49,23 @@ class DatabaseService:
         self.database = self.config.get('database', {}).get('database', '')
         self.readCacheEnabled = self.config.get('database', {}).get('readCacheEnabled', True)
         self.cacheReadInterval = int(self.config.get('database', {}).get('cacheReadInterval', 60))
+        
+        # Disable TLS for MySQL
+        connect_args = {}
+        if self.databaseType == "mysql":
+            connect_args = {"ssl": None}   
+
+        echo = self.config['logging'].get('sqlalchemy_sql_echo', False) 
+        pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 5)
+        pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30)
+        max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 0)            
 
         self.sqlAlchemyEngine = create_engine(
-            f"{self.databaseType}://{self.databaseUsername}:{self.databasePassword}@{self.databaseHost}/{self.database}"
+            f"{self.databaseType}://{self.databaseUsername}:{self.databasePassword}@{self.databaseHost}/{self.database}",
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_recycle=pool_recycle,
+            connect_args=connect_args,
         )
         self.sqlAlchemySession = sessionmaker(bind=self.sqlAlchemyEngine)
 

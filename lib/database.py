@@ -392,14 +392,21 @@ class Database:
         else:
             raise RuntimeError(f'Invalid database.db_type set "{db_type}"')
 
-        self.hostname = socket.gethostname()        
+        self.hostname = socket.gethostname()    
+
+        # Disable TLS for MySQL
+        connect_args = {}
+        if self.databaseType == "mysql":
+            connect_args = {"ssl": None}        
         
         self.engine = create_engine(
             db_string, 
             echo = self.config['logging'].get('sqlalchemy_sql_echo', False), 
             pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 5),
             pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30),
-            max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 0))
+            max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 0),
+            connect_args=connect_args
+        )
 
         # Create database if it does not exist.
         if not database_exists(self.engine.url):
