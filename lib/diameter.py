@@ -26,7 +26,6 @@ import threading
 # Simple in-memory store to track active IMSIs or Session-Ids
 SESSION_TTL = 60  # seconds
 active_sessions = {}  # IMSI → {created, last_session_id}
-bearerInfoStore = {}  # sesson id -> {mediatype}
 
 class Diameter:
 
@@ -3707,13 +3706,7 @@ class Diameter:
                     # Iterate through each media component
                     for media_avp in media_components:
                         mediaType = self.get_avp_data(media_avp, 520)[0]
-                        
-                        if aarSessionID not in bearerInfoStore:
-                            bearerInfoStore[aarSessionID] = []
-
-                        if mediaType not in bearerInfoStore[aarSessionID]:
-                            bearerInfoStore[aarSessionID].append(mediaType)
-                       
+                      
                         self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType}", redisClient=self.redisMessaging)
                         # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
                         valid_media_types = [0, 1]
