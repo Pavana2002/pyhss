@@ -4162,6 +4162,7 @@ class Diameter:
                             chargingRuleName='GBR-Voice_' + str(aarSessionID),
                             chargingRuleAction='remove'
                         )
+                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] removed charging rule {chargingRuleName}", redisClient=self.redisMessaging)
                     if (int(mediaType, 16) == 1):
                         reAuthAnswer = self.awaitDiameterRequestAndResponse(
                             requestType='RAR',
@@ -4171,7 +4172,8 @@ class Diameter:
                             servingRealm=servingPgwRealm,
                             chargingRuleName='GBR-Video_' + str(aarSessionID),
                             chargingRuleAction='remove'
-                        )            
+                        )
+                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] removed charging rule {chargingRuleName}", redisClient=self.redisMessaging)
                 if not len(reAuthAnswer) > 0:
                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
                     assert()
