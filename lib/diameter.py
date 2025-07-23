@@ -2567,8 +2567,6 @@ class Diameter:
                             """
                             If we've recieved a CCR-Terminate, delete the emergency subscriber.
                             """
-                            if imsi in active_sessions:
-                                del active_sessions[imsi]
 
                             try:
                                 ueIp = self.get_avp_data(avps, 8)[0]
@@ -2792,6 +2790,10 @@ class Diameter:
 
             # CCR - Termination Request
             elif int(CC_Request_Type) == 3:
+                if imsi in active_sessions:
+                    del active_sessions[imsi]
+
+                
                 self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Request type for CCA is 3 - Termination", redisClient=self.redisMessaging)
                 session_id_string = str(binascii.unhexlify(session_id).decode())
                 subscriber_details = self.database.Get_Subscriber(imsi=imsi)
@@ -4149,7 +4151,10 @@ class Diameter:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Original SessionID: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 aarSessionID = ""
             if servingApn is not None or emergencySubscriberData:
-                mediaTypes = bearerInfoStore.get(pcrfSessionId, [])
+                
+                if pcrfSessionId in bearerInfoStore:
+                    mediaTypes = bearerInfoStore.get(pcrfSessionId, [])
+                    del bearerInfoStore[pcrfSessionId]                
                 
                 for mediaType in mediaTypes:
                     if (int(mediaType, 16) == 0):
