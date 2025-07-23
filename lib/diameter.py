@@ -4145,33 +4145,40 @@ class Diameter:
                 aarSessionID = ""
             if servingApn is not None or emergencySubscriberData:
                 
-                if pcrfSessionId in bearerInfoStore:
-                    mediaTypes = bearerInfoStore.get(pcrfSessionId, [])
-                    del bearerInfoStore[pcrfSessionId]                
-                
-                for mediaType in mediaTypes:
-                    if (int(mediaType, 16) == 0):
+                for rule_name in [f'GBR-Voice_{aarSessionID}', f'GBR-Video_{aarSessionID}']:
+                    try:
                         reAuthAnswer = self.awaitDiameterRequestAndResponse(
                             requestType='RAR',
                             hostname=servingPgwPeer,
                             sessionId=pcrfSessionId,
                             servingPgw=servingPgw,
                             servingRealm=servingPgwRealm,
-                            chargingRuleName='GBR-Voice_' + str(aarSessionID),
+                            chargingRuleName=rule_name,
                             chargingRuleAction='remove'
                         )
-                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] removed charging rule {chargingRuleName}", redisClient=self.redisMessaging)
-                    if (int(mediaType, 16) == 1):
-                        reAuthAnswer = self.awaitDiameterRequestAndResponse(
-                            requestType='RAR',
-                            hostname=servingPgwPeer,
-                            sessionId=pcrfSessionId,
-                            servingPgw=servingPgw,
-                            servingRealm=servingPgwRealm,
-                            chargingRuleName='GBR-Video_' + str(aarSessionID),
-                            chargingRuleAction='remove'
-                        )
-                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] removed charging rule {chargingRuleName}", redisClient=self.redisMessaging)
+                        if not len(reAuthAnswer) > 0:
+                            self.logTool.log(service='HSS', level='warning',
+                                message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout for rule: {rule_name}",
+                                redisClient=self.redisMessaging)
+                            continue
+
+                        raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
+                        raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
+
+                        if raaResultCode == 2001:
+                            self.logTool.log(service='HSS', level='debug',
+                                message=f"[diameter.py] [Answer_16777236_275] [STA] Successfully removed rule: {rule_name}",
+                                redisClient=self.redisMessaging)
+                        else:
+                            self.logTool.log(service='HSS', level='warning',
+                                message=f"[diameter.py] [Answer_16777236_275] [STA] Failed to remove rule: {rule_name} (Result-Code: {raaResultCode})",
+                                redisClient=self.redisMessaging)
+
+                    except Exception as e:
+                        self.logTool.log(service='HSS', level='error',
+                            message=f"[diameter.py] [Answer_16777236_275] [STA] Exception while removing rule {rule_name}: {traceback.format_exc()}",
+                            redisClient=self.redisMessaging)
+
                 if not len(reAuthAnswer) > 0:
                     self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
                     assert()
