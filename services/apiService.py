@@ -16,9 +16,18 @@ from diameter import Diameter
 from messaging import RedisMessaging
 import database
 import yaml
+import io
+import csv
+import pandas as pd
+from datetime import datetime
+from flask import send_from_directory
 
 with open("../config.yaml", 'r') as stream:
     config = (yaml.safe_load(stream))
+
+BASE_URL = "http://localhost:8080"  
+HEADERS = {"Content-Type": "application/json"}
+UPLOAD_ENABLED = True
 
 siteName = config.get("hss", {}).get("site_name", "")
 originHostname = socket.gethostname()
@@ -371,6 +380,105 @@ class PyHSS_APN(Resource):
             print(E)
             return handle_exception(E)
 
+if UPLOAD_ENABLED :
+    @ns_apn.route('/upload')
+    class UploadAPN(Resource):
+        @ns_apn.doc('Upload CSV to create or update multiple APNs (identified by IMSI)')
+        def put(self):
+            '''Upload a CSV file and create/update multiple APNs using IMSI as the key'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                # Read with utf-8-sig to remove BOM
+                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                csv_reader = csv.DictReader(stream)
+
+                # Strip BOM from headers
+                if csv_reader.fieldnames:
+                    csv_reader.fieldnames = [name.lstrip("\ufeff") for name in csv_reader.fieldnames]
+
+                results = []
+                for row in csv_reader:
+                    # Clean row keys + values
+                    cleaned_row = {
+                        k.lstrip("\ufeff"): self._convert_value(v)
+                        for k, v in row.items()
+                    }
+
+                    imsi = cleaned_row.get("imsi")
+
+                    if imsi is None:
+                        results.append({
+                            "imsi": None,
+                            "action": "error",
+                            "error": "Missing imsi in row"
+                        })
+                        continue
+
+                    try:
+                        # Try to get existing APN by IMSI
+                        existing_apn = databaseClient.GetObj(APN, imsi)
+
+                        # If exists, update
+                        updated_apn = databaseClient.UpdateObj(APN, cleaned_row, imsi, False)
+                        results.append({
+                            "imsi": imsi,
+                            "action": "updated",
+                            "data": updated_apn
+                        })
+                    except Exception as e:
+                        # If not found, create new
+                        if "No <class 'database.APN'>" in str(e):
+                            try:
+                                new_imsi = databaseClient.CreateObj(APN, cleaned_row, False)
+                                results.append({
+                                    "imsi": new_imsi,
+                                    "action": "created"
+                                })
+                            except Exception as inner_e:
+                                results.append({
+                                    "imsi": imsi,
+                                    "action": "error",
+                                    "error": str(inner_e)
+                                })
+                        else:
+                            results.append({
+                                "imsi": imsi,
+                                "action": "error",
+                                "error": str(e)
+                            })
+
+                return {"status": "success", "results": results}, 200
+
+            except Exception as e:
+                print("Exception while uploading APNs:", e)
+                return {"error": str(e)}, 500
+
+        def _convert_value(self, value):
+            """Utility to convert CSV strings to appropriate types."""
+            if value is None:
+                return None
+            value = value.strip().lstrip("\ufeff")  # strip whitespace + BOM if present
+            if value.upper() == "TRUE":
+                return True
+            if value.upper() == "FALSE":
+                return False
+            if value == "":
+                return None
+            try:
+                return int(value)
+            except:
+                try:
+                    return float(value)
+                except:
+                    return value
+
 @ns_apn.route('/list')
 class PyHSS_OAM_All_APNs(Resource):
     @ns_apn.expect(paginatorParser)
@@ -471,6 +579,289 @@ class PyHSS_AUC(Resource):
         except Exception as E:
             print(E)
             return handle_exception(E)
+
+if UPLOAD_ENABLED :
+    @ns_auc.route('/upload')
+    class UploadAUC(Resource):
+        @ns_auc.doc('Upload CSV to create or update multiple AUCs (identified by IMSI)')
+        def put(self):
+            '''Upload a CSV file and create/update multiple AUCs using IMSI as the key'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                # Read with utf-8-sig to auto-strip BOM
+                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                csv_reader = csv.DictReader(stream)
+
+                # Clean BOM from headers if still present
+                if csv_reader.fieldnames:
+                    csv_reader.fieldnames = [name.lstrip("\ufeff") for name in csv_reader.fieldnames]
+
+                results = []
+                for row in csv_reader:
+                    # Clean row keys + values
+                    cleaned_row = {
+                        k.lstrip("\ufeff"): self._convert_value(v)
+                        for k, v in row.items()
+                    }
+
+                    imsi = cleaned_row.get("imsi")
+
+                    if imsi is None:
+                        results.append({
+                            "imsi": None,
+                            "action": "error",
+                            "error": "Missing imsi in row"
+                        })
+                        continue
+
+                    try:
+                        # Try to get existing AUC by IMSI
+                        existing_auc = databaseClient.GetObj(AUC, imsi)
+
+                        # If exists, update
+                        updated_auc = databaseClient.UpdateObj(AUC, cleaned_row, imsi, False)
+                        results.append({
+                            "imsi": imsi,
+                            "action": "updated",
+                            "data": updated_auc
+                        })
+                    except Exception as e:
+                        # If not found, create new
+                        if "No <class 'database.AUC'>" in str(e):
+                            try:
+                                new_imsi = databaseClient.CreateObj(AUC, cleaned_row, False)
+                                results.append({
+                                    "imsi": new_imsi,
+                                    "action": "created"
+                                })
+                            except Exception as inner_e:
+                                results.append({
+                                    "imsi": imsi,
+                                    "action": "error",
+                                    "error": str(inner_e)
+                                })
+                        else:
+                            results.append({
+                                "imsi": imsi,
+                                "action": "error",
+                                "error": str(e)
+                            })
+
+                return {"status": "success", "results": results}, 200
+
+            except Exception as e:
+                print("Exception while uploading AUCs:", e)
+                return {"error": str(e)}, 500
+
+        def _convert_value(self, value):
+            """Utility to convert CSV strings to appropriate types."""
+            if value is None:
+                return None
+            value = value.strip().lstrip("\ufeff")  # strip whitespace + BOM if present
+            if value.upper() == "TRUE":
+                return True
+            if value.upper() == "FALSE":
+                return False
+            if value == "":
+                return None
+            try:
+                return int(value)
+            except:
+                try:
+                    return float(value)
+                except:
+                    return value
+
+if UPLOAD_ENABLED :
+    @ns_auc.route('/newsubscriber/upload')
+    class UploadNewSubscriber(Resource):
+        @ns_auc.doc('Upload Excel or CSV to create new subscribers (AUC, SUBSCRIBER, IMS)')
+        def put(self):
+            '''Upload Excel or CSV to create AUC, SUBSCRIBER, and IMS_SUBSCRIBER entries'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                filename = file.filename.lower()
+                stream = io.BytesIO(file.read())
+
+                # Detect and parse file type
+                if filename.endswith(".csv"):
+                    df = pd.read_csv(stream, dtype={"imsi": str, "msisdn": str})
+                elif filename.endswith(".xlsx"):
+                    df = pd.read_excel(stream, dtype={"imsi": str, "msisdn": str})
+                else:
+                    return {"error": "Unsupported file type. Only .csv and .xlsx are supported."}, 400
+
+                # Clean and normalize data
+                df = df.applymap(lambda x: str(x).strip() if isinstance(x, str) else x)
+                df['enabled'] = df['enabled'].apply(lambda x: str(x).lower() in ['true', '1', 'yes'])
+
+                # Get last auc_id
+                try:
+                    all_aucs = databaseClient.getAllPaginated(AUC, 0, 10000)
+                    last_auc_id = max([auc.get('auc_id', 0) for auc in all_aucs], default=0)
+                except Exception as e:
+                    print("Error getting last auc_id:", e)
+                    last_auc_id = 0
+
+                created = []
+
+                for _, row in df.iterrows():
+                    # FIX: always cast to string before zfill/replace
+                    imsi = str(row["imsi"]).split('.')[0].zfill(15) if pd.notna(row["imsi"]) else None
+                    msisdn = str(row["msisdn"]).replace('+', '') if pd.notna(row["msisdn"]) else None
+
+                    # === AUC data ===
+                    auc_data = {
+                        "imsi": imsi,
+                        "ki": row["ki"],
+                        "opc": row["opc"],
+                        "amf": row["amf"],
+                        "sqn": int(row["sqn"])
+                    }
+
+                    try:
+                        auc_result = databaseClient.CreateObj(AUC, auc_data, False)
+
+                        if isinstance(auc_result, dict) and 'auc_id' in auc_result:
+                            inserted_auc_id = auc_result["auc_id"]
+                        else:
+                            all_aucs = databaseClient.getAllPaginated(AUC, 0, 10000)
+                            inserted_auc_id = max([auc.get('auc_id', 0) for auc in all_aucs], default=0)
+
+                        # === SUBSCRIBER data ===
+                        subscriber_data = {
+                            "imsi": imsi,
+                            "enabled": row["enabled"],
+                            "auc_id": inserted_auc_id,
+                            "default_apn": int(row["default_apn"]),
+                            "apn_list": row["apn_list"],
+                            "msisdn": msisdn,
+                            "ue_ambr_dl": int(row["ue_ambr_dl"]),
+                            "ue_ambr_ul": int(row["ue_ambr_ul"])
+                        }
+
+                        # === IMS_SUBSCRIBER data ===
+                        ims_data = {
+                            "imsi": imsi,
+                            "msisdn": msisdn,
+                            "sh_profile": "string",
+                            "scscf_peer": "scscf.ims.mnc001.mcc001.3gppnetwork.org",
+                            "msisdn_list": f"[{msisdn}]",
+                            "ifc_path": "default_ifc.xml",
+                            "scscf": "sip:scscf.ims.mnc001.mcc001.3gppnetwork.org:6060",
+                            "scscf_realm": "ims.mnc001.mcc001.3gppnetwork.org"
+                        }
+
+                        databaseClient.CreateObj(SUBSCRIBER, subscriber_data, False)
+                        databaseClient.CreateObj(IMS_SUBSCRIBER, ims_data, False)
+
+                        created.append({
+                            "imsi": imsi,
+                            "auc_id": inserted_auc_id,
+                            "auc_data": auc_data,
+                            "subscriber_data": subscriber_data,
+                            "ims_data": ims_data,
+                            "status": "success"
+                        })
+
+                    except Exception as e:
+                        print(f"Error processing IMSI {imsi}:", e)
+                        created.append({
+                            "imsi": imsi,
+                            "auc_data": auc_data,
+                            "subscriber_data": subscriber_data if 'subscriber_data' in locals() else None,
+                            "ims_data": ims_data if 'ims_data' in locals() else None,
+                            "status": f"failed: {str(e)}"
+                        })
+
+                return {"status": "completed", "details": created}, 200
+
+            except Exception as E:
+                print(E)
+                return handle_exception(E)
+
+if UPLOAD_ENABLED :
+    @ns_auc.route('/subscriber/delete')
+    class DeleteSubscribers(Resource):
+        @ns_auc.doc('Delete subscribers, IMS subscribers, and AUC records from Excel IMSI list')
+        def put(self):
+            if 'file' not in request.files:
+                return {'error': 'No file part in request'}, 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return {'error': 'No file selected'}, 400
+
+            try:
+                df = pd.read_excel(file, dtype={"imsi": str})
+                df['imsi'] = df['imsi'].apply(lambda x: x.strip().zfill(15))
+
+                response_log = []
+
+                for imsi in df['imsi']:
+                    log = {"imsi": imsi, "deleted": [], "errors": []}
+
+                    # --- Step 1: IMS_SUBSCRIBER ---
+                    try:
+                        r1 = requests.get(f"{BASE_URL}/ims_subscriber/ims_subscriber_imsi/{imsi}", headers=HEADERS)
+                        if r1.status_code == 200:
+                            ims_id = r1.json().get("ims_subscriber_id")
+                            d1 = requests.delete(f"{BASE_URL}/ims_subscriber/{ims_id}", headers=HEADERS)
+                            log["deleted"].append(f"IMS_SUBSCRIBER {ims_id}")
+                        elif r1.status_code == 404:
+                            log["errors"].append("IMS_SUBSCRIBER not found")
+                        else:
+                            log["errors"].append(f"IMS_SUBSCRIBER fetch failed: {r1.status_code}")
+                    except Exception as e:
+                        log["errors"].append(f"IMS_SUBSCRIBER delete error: {str(e)}")
+
+                    # --- Step 2: SUBSCRIBER ---
+                    try:
+                        r2 = requests.get(f"{BASE_URL}/subscriber/imsi/{imsi}", headers=HEADERS)
+                        if r2.status_code == 200:
+                            sub_id = r2.json().get("subscriber_id")
+                            d2 = requests.delete(f"{BASE_URL}/subscriber/{sub_id}", headers=HEADERS)
+                            log["deleted"].append(f"SUBSCRIBER {sub_id}")
+                        elif r2.status_code == 404:
+                            log["errors"].append("SUBSCRIBER not found")
+                        else:
+                            log["errors"].append(f"SUBSCRIBER fetch failed: {r2.status_code}")
+                    except Exception as e:
+                        log["errors"].append(f"SUBSCRIBER delete error: {str(e)}")
+
+                    # --- Step 3: AUC ---
+                    try:
+                        r3 = requests.get(f"{BASE_URL}/auc/imsi/{imsi}", headers=HEADERS)
+                        if r3.status_code == 200:
+                            auc_id = r3.json().get("auc_id")
+                            d3 = requests.delete(f"{BASE_URL}/auc/{auc_id}", headers=HEADERS)
+                            log["deleted"].append(f"AUC {auc_id}")
+                        elif r3.status_code == 404:
+                            log["errors"].append("AUC not found")
+                        else:
+                            log["errors"].append(f"AUC fetch failed: {r3.status_code}")
+                    except Exception as e:
+                        log["errors"].append(f"AUC delete error: {str(e)}")
+
+                    response_log.append(log)
+
+                return {"result": "completed", "details": response_log}, 200
+
+            except Exception as e:
+                return {"error": str(e)}, 500
 
 @ns_auc.route('/list')
 class PyHSS_AUC_All(Resource):
@@ -603,6 +994,117 @@ class PyHSS_SUBSCRIBER(Resource):
         except Exception as E:
             print(E)
             return handle_exception(E)
+
+if UPLOAD_ENABLED :
+    @ns_subscriber.route('/upload')
+    class UploadSUBSCRIBER(Resource):
+        @ns_subscriber.doc('Upload CSV to create/update multiple SUBSCRIBERs (identified by IMSI)')
+        def put(self):
+            '''Upload a CSV file and create/update multiple SUBSCRIBERs using IMSI as the key'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                # Read with utf-8-sig to handle BOM
+                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                csv_reader = csv.DictReader(stream)
+
+                # Clean BOM from headers
+                if csv_reader.fieldnames:
+                    csv_reader.fieldnames = [name.lstrip("\ufeff") for name in csv_reader.fieldnames]
+
+                results = []
+                for row in csv_reader:
+                    # Clean row keys + values
+                    cleaned_row = {
+                        k.lstrip("\ufeff"): self._convert_value(v)
+                        for k, v in row.items()
+                    }
+
+                    # Normalize msisdn (remove leading +)
+                    if 'msisdn' in cleaned_row and cleaned_row['msisdn']:
+                        cleaned_row['msisdn'] = str(cleaned_row['msisdn']).replace('+', '')
+
+                    # Normalize IMSI (primary key, always 15 digits string)
+                    imsi = cleaned_row.get("imsi")
+                    if imsi:
+                        imsi = str(imsi).zfill(15)
+                        cleaned_row["imsi"] = imsi
+
+                    if not imsi:
+                        results.append({
+                            "imsi": None,
+                            "action": "error",
+                            "error": "Missing imsi in row"
+                        })
+                        continue
+
+                    try:
+                        # Try to get existing SUBSCRIBER by IMSI
+                        existing = databaseClient.GetObj(SUBSCRIBER, imsi)
+
+                        # Update if found
+                        updated_subscriber = databaseClient.UpdateObj(SUBSCRIBER, cleaned_row, imsi, False)
+                        results.append({
+                            "imsi": imsi,
+                            "action": "updated",
+                            "data": updated_subscriber
+                        })
+                    except Exception as e:
+                        if "No <class 'database.SUBSCRIBER'>" in str(e):
+                            try:
+                                new_imsi = databaseClient.CreateObj(SUBSCRIBER, cleaned_row, False)
+                                results.append({
+                                    "imsi": new_imsi,
+                                    "action": "created"
+                                })
+                            except Exception as inner_e:
+                                results.append({
+                                    "imsi": imsi,
+                                    "action": "error",
+                                    "error": str(inner_e)
+                                })
+                        else:
+                            results.append({
+                                "imsi": imsi,
+                                "action": "error",
+                                "error": str(e)
+                            })
+
+                return {"status": "success", "results": results}, 200
+
+            except Exception as e:
+                print("Exception while uploading SUBSCRIBERs:", e)
+                return {"error": str(e)}, 500
+
+        def _convert_value(self, value):
+            """Utility to convert CSV strings to appropriate types."""
+            if value is None:
+                return None
+
+            # Always cast to string before string operations
+            value = str(value).strip().lstrip("\ufeff")
+
+            if value.upper() == "TRUE":
+                return True
+            if value.upper() == "FALSE":
+                return False
+            if value == "":
+                return None
+
+            # Try numeric conversion
+            try:
+                return int(value)
+            except ValueError:
+                try:
+                    return float(value)
+                except ValueError:
+                    return value
 
 @ns_subscriber.route('/imsi/<string:imsi>')
 class PyHSS_SUBSCRIBER_IMSI(Resource):
@@ -765,6 +1267,112 @@ class PyHSS_IMS_SUBSCRIBER(Resource):
         except Exception as E:
             print(E)
             return handle_exception(E)
+
+if UPLOAD_ENABLED :
+    @ns_ims_subscriber.route('/upload')
+    class UploadIMS_SUBSCRIBER(Resource):
+        @ns_ims_subscriber.doc('Upload CSV to create/update multiple IMS SUBSCRIBERs (identified by IMSI)')
+        def put(self):
+            '''Upload a CSV file and create/update multiple IMS SUBSCRIBERs using IMSI as the key'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                # Read with utf-8-sig to handle BOM
+                stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+                csv_reader = csv.DictReader(stream)
+
+                # Clean BOM from headers
+                if csv_reader.fieldnames:
+                    csv_reader.fieldnames = [name.lstrip("\ufeff") for name in csv_reader.fieldnames]
+
+                results = []
+                for row in csv_reader:
+                    # Clean row keys + values
+                    cleaned_row = {
+                        k.lstrip("\ufeff"): self._convert_value(v)
+                        for k, v in row.items()
+                    }
+
+                    # Normalize msisdn fields
+                    if 'msisdn' in cleaned_row and cleaned_row['msisdn']:
+                        cleaned_row['msisdn'] = cleaned_row['msisdn'].replace('+', '')
+                    if 'msisdn_list' in cleaned_row and cleaned_row['msisdn_list']:
+                        cleaned_row['msisdn_list'] = cleaned_row['msisdn_list'].replace('+', '')
+
+                    # Use IMSI as primary key
+                    imsi = cleaned_row.get("imsi")
+
+                    if imsi is None:
+                        results.append({
+                            "imsi": None,
+                            "action": "error",
+                            "error": "Missing imsi in row"
+                        })
+                        continue
+
+                    try:
+                        # Try to get existing IMS_SUBSCRIBER by IMSI
+                        existing = databaseClient.GetObj(IMS_SUBSCRIBER, imsi)
+
+                        # Update if found
+                        updated_obj = databaseClient.UpdateObj(IMS_SUBSCRIBER, cleaned_row, imsi, False)
+                        results.append({
+                            "imsi": imsi,
+                            "action": "updated",
+                            "data": updated_obj
+                        })
+
+                    except Exception as e:
+                        if "No <class 'database.IMS_SUBSCRIBER'>" in str(e):
+                            try:
+                                new_imsi = databaseClient.CreateObj(IMS_SUBSCRIBER, cleaned_row, False)
+                                results.append({
+                                    "imsi": new_imsi,
+                                    "action": "created"
+                                })
+                            except Exception as inner_e:
+                                results.append({
+                                    "imsi": imsi,
+                                    "action": "error",
+                                    "error": str(inner_e)
+                                })
+                        else:
+                            results.append({
+                                "imsi": imsi,
+                                "action": "error",
+                                "error": str(e)
+                            })
+
+                return {"status": "success", "results": results}, 200
+
+            except Exception as e:
+                print("Exception while uploading IMS SUBSCRIBERs:", e)
+                return {"error": str(e)}, 500
+
+        def _convert_value(self, value):
+            """Utility to convert CSV strings to appropriate types."""
+            if value is None:
+                return None
+            value = value.strip().lstrip("\ufeff")  # strip whitespace + BOM if present
+            if value.upper() == "TRUE":
+                return True
+            if value.upper() == "FALSE":
+                return False
+            if value == "":
+                return None
+            try:
+                return int(value)
+            except:
+                try:
+                    return float(value)
+                except:
+                    return value
 
 @ns_ims_subscriber.route('/ims_subscriber_msisdn/<string:msisdn>')
 class PyHSS_IMS_SUBSCRIBER_MSISDN(Resource):
@@ -1144,6 +1752,92 @@ class PyHSS_EIR(Resource):
         except Exception as E:
             print(E)
             return handle_exception(E)
+
+if UPLOAD_ENABLED :
+    @ns_eir.route('/upload')
+    class UploadEIR(Resource):
+        @ns_eir.doc('Upload CSV to create/update multiple EIR entries')
+        def put(self):
+            '''Upload a CSV file and create/update multiple EIR rules'''
+            try:
+                if 'file' not in request.files:
+                    return {'error': 'No file part in the request'}, 400
+
+                file = request.files['file']
+
+                if file.filename == '':
+                    return {'error': 'No selected file'}, 400
+
+                stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+                csv_reader = csv.DictReader(stream)
+
+                results = []
+                for row in csv_reader:
+                    cleaned_row = {k: self._convert_value(v) for k, v in row.items()}
+                    eir_id = cleaned_row.get("eir_id")
+
+                    if eir_id is None:
+                        results.append({
+                            "eir_id": None,
+                            "action": "error",
+                            "error": "Missing eir_id"
+                        })
+                        continue
+
+                    try:
+                        # Try to fetch existing EIR entry
+                        existing = databaseClient.GetObj(EIR, eir_id)
+
+                        # If exists, update
+                        updated_obj = databaseClient.UpdateObj(EIR, cleaned_row, eir_id, False)
+                        results.append({
+                            "eir_id": eir_id,
+                            "action": "updated",
+                            "data": updated_obj
+                        })
+
+                    except Exception as e:
+                        if "No <class 'database.EIR'>" in str(e):
+                            try:
+                                new_id = databaseClient.CreateObj(EIR, cleaned_row, False)
+                                results.append({
+                                    "eir_id": new_id,
+                                    "action": "created"
+                                })
+                            except Exception as inner_e:
+                                results.append({
+                                    "eir_id": eir_id,
+                                    "action": "error",
+                                    "error": str(inner_e)
+                                })
+                        else:
+                            results.append({
+                                "eir_id": eir_id,
+                                "action": "error",
+                                "error": str(e)
+                            })
+
+                return {"status": "success", "results": results}, 200
+
+            except Exception as E:
+                print(E)
+                return handle_exception(E)
+
+        def _convert_value(self, value):
+            """Utility to convert CSV strings to appropriate types."""
+            if value is None:
+                return None
+            value = value.strip()
+            if value.upper() == "TRUE":
+                return True
+            if value.upper() == "FALSE":
+                return False
+            if value == "":
+                return None
+            try:
+                return int(value)
+            except:
+                return value
 
 @ns_eir.route('/eir_history/<string:attribute>')
 class PyHSS_EIR_HISTORY(Resource):
