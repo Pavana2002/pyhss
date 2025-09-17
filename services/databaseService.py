@@ -57,14 +57,16 @@ class DatabaseService:
 
         echo = self.config['logging'].get('sqlalchemy_sql_echo', False) 
         pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 3600)
-        pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30)
-        max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 10)            
+        pool_size=self.config['logging'].get('sqlalchemy_pool_size', 20)
+        max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 10)
+        pool_timeout=30
 
         self.sqlAlchemyEngine = create_engine(
             f"{self.databaseType}://{self.databaseUsername}:{self.databasePassword}@{self.databaseHost}/{self.database}",
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
+            pool_timeout=pool_timeout,
             connect_args=connect_args,
         )
         self.sqlAlchemySession = sessionmaker(bind=self.sqlAlchemyEngine)

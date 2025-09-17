@@ -403,8 +403,9 @@ class Database:
             db_string, 
             echo = self.config['logging'].get('sqlalchemy_sql_echo', False), 
             pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 3600),
-            pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30),
+            pool_size=self.config['logging'].get('sqlalchemy_pool_size', 20),
             max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 10),
+            pool_timeout=30,
             connect_args=connect_args
         )
 
