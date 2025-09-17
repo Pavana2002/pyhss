@@ -53,7 +53,7 @@ class DatabaseService:
         # Disable TLS for MySQL
         connect_args = {}
         if self.databaseType == "mysql":
-            connect_args = {"ssl": None}   
+            connect_args={"ssl_mode": "DISABLED"}   
 
         echo = self.config['logging'].get('sqlalchemy_sql_echo', False) 
         pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 3600)

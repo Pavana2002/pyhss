@@ -397,7 +397,7 @@ class Database:
         # Disable TLS for MySQL
         connect_args = {}
         if db_type == "mysql":
-            connect_args = {"ssl": None}        
+            connect_args={"ssl_mode": "DISABLED"}        
         
         self.engine = create_engine(
             db_string, 
