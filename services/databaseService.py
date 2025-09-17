@@ -65,7 +65,6 @@ class DatabaseService:
             pool_size=pool_size,
             max_overflow=max_overflow,
             pool_recycle=pool_recycle,
-            pool_pre_ping=True,
             connect_args=connect_args,
         )
         self.sqlAlchemySession = sessionmaker(bind=self.sqlAlchemyEngine)

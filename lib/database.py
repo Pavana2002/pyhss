@@ -405,7 +405,6 @@ class Database:
             pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 3600),
             pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30),
             max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 10),
-            pool_pre_ping=True,
             connect_args=connect_args
         )
 
