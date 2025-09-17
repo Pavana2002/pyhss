@@ -402,9 +402,10 @@ class Database:
         self.engine = create_engine(
             db_string, 
             echo = self.config['logging'].get('sqlalchemy_sql_echo', False), 
-            pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 5),
+            pool_recycle=self.config['logging'].get('sqlalchemy_pool_recycle', 3600),
             pool_size=self.config['logging'].get('sqlalchemy_pool_size', 30),
-            max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 0),
+            max_overflow=self.config['logging'].get('sqlalchemy_max_overflow', 10),
+            pool_pre_ping=True,
             connect_args=connect_args
         )
 
