@@ -1184,102 +1184,276 @@ class Database:
         return final_result_list
 
     def UpdateObj(self, obj_type, json_data, obj_id, disable_logging=False, operation_id=None):
-        self.logTool.log(service='Database', level='debug', message=f"Called UpdateObj() for type {obj_type} id {obj_id} with JSON data: {json_data} and operation_id: {operation_id}", redisClient=self.redisMessaging)
+        """
+        Update an object of type `obj_type` with `json_data` for the row identified by obj_id.
+
+        Changes compared to the previous implementation:
+        - After applying attribute changes we call session.flush() to ensure DB-side defaults/PKs are populated,
+          then build objectData from the in-memory `obj.__dict__` rather than calling GetObj() which issues
+          another SELECT. This avoids an extra DB roundtrip.
+        - We still run the change-logging hook (log_changes_before_commit) prior to commit so operation logs
+          are created from session state.
+        """
+        self.logTool.log(
+            service='Database',
+            level='debug',
+            message=f"Called UpdateObj() for type {obj_type} id {obj_id} with JSON data: {json_data} and operation_id: {operation_id}",
+            redisClient=self.redisMessaging
+        )
+
         Session = sessionmaker(bind=self.engine)
         session = Session()
+
+        # determine filter (keeps the existing eval-based style so this is a drop-in)
         obj_type_str = str(obj_type.__table__.name).upper()
         self.logTool.log(service='Database', level='debug', message=f"obj_type_str is {obj_type_str}", redisClient=self.redisMessaging)
         filter_input = eval(obj_type_str + "." + obj_type_str.lower() + "_id==obj_id")
+
         try:
+            # Fetch the instance to update
             obj = session.query(obj_type).filter(filter_input).one()
+
+            # Apply updates from json_data to the object (only attributes that exist)
             for key, value in json_data.items():
                 if hasattr(obj, key):
                     setattr(obj, key, value)
-                    setattr(obj, "last_modified", datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z')
+
+            # Update last_modified once (ISO8601 UTC string), rather than for every attribute
+            try:
+                last_modified_value = datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                if hasattr(obj, "last_modified"):
+                    setattr(obj, "last_modified", last_modified_value)
+            except Exception:
+                # non-fatal if last_modified can't be set for whatever reason
+                pass
+
         except Exception as E:
             self.logTool.log(service='Database', level='error', message=f"Failed to query or update object, error: {E}", redisClient=self.redisMessaging)
+            # close session and propagate as ValueError (consistent with other methods)
+            self.safe_close(session)
             raise ValueError(E)
+
+        # Now prepare to commit: set operation id, log changes, flush, build objectData from obj, commit, webhook
         try:
-                session.info["operation_id"] = operation_id  # Pass the operation id
+            session.info["operation_id"] = operation_id  # Pass the operation id
+
+            try:
+                # create operation logs based on session state before commit (this may flush)
+                if not disable_logging:
+                    self.log_changes_before_commit(session)
+
+                # flush so DB gets PKs / computed defaults, but avoid an extra close-get roundtrip
+                session.flush()
+
+                # build objectData from obj directly (copy to avoid SQLAlchemy internal state exposure)
+                result = obj.__dict__.copy()
+                # remove internal sqlalchemy state if present
+                result.pop('_sa_instance_state', None)
+                # sanitize datetimes to strings
+                objectData = self.Sanitize_Datetime(result)
+
+                # commit the transaction
+                session.commit()
+
+                # post-commit webhook uses the prepared objectData
                 try:
-                    if not disable_logging:
-                        self.log_changes_before_commit(session)
-                    objectData = self.GetObj(obj_type, obj_id)
-                    session.commit()
                     self.handleWebhook(objectData, 'PATCH')
-                except Exception as E:
-                    self.logTool.log(service='Database', level='error', message=f"Failed to commit session, error: {E}", redisClient=self.redisMessaging)
-                    self.safe_rollback(session)
-                    raise ValueError(E)
+                except Exception as webhook_exc:
+                    # webhook failure shouldn't break the DB commit but we log it
+                    self.logTool.log(service='Database', level='warning', message=f"Webhook failed after UpdateObj commit: {webhook_exc}", redisClient=self.redisMessaging)
+
+            except Exception as E:
+                # if anything failed during log/flush/commit, rollback and surface error
+                self.logTool.log(service='Database', level='error', message=f"Failed to commit session in UpdateObj, error: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                self.safe_rollback(session)
+                raise ValueError(E)
+
         except Exception as E:
-            self.logTool.log(service='Database', level='error', message=f"Exception in UpdateObj, error: {E}", redisClient=self.redisMessaging)
+            # unexpected outer exception
+            self.logTool.log(service='Database', level='error', message=f"Exception in UpdateObj outer try, error: {E}", redisClient=self.redisMessaging)
             raise ValueError(E)
+
         finally:
+            # always attempt to close the session
             self.safe_close(session)
 
-        return self.GetObj(obj_type, obj_id)
+        # Return the objectData we built from the in-memory object (already sanitized)
+        return objectData
 
     def DeleteObj(self, obj_type, obj_id, disable_logging=False, operation_id=None):
-        self.logTool.log(service='Database', level='debug', message=f"Called DeleteObj for type {obj_type} with id {obj_id}", redisClient=self.redisMessaging)
+        """
+        Delete an object of type `obj_type` identified by obj_id.
+        - Attempts to fetch the object, builds objectData from the in-memory instance,
+          logs (if enabled), deletes the object, commits, and sends a 'DELETE' webhook.
+        """
+        self.logTool.log(
+            service='Database',
+            level='debug',
+            message=f"Called DeleteObj() for type {obj_type} id {obj_id} with operation_id: {operation_id}",
+            redisClient=self.redisMessaging
+        )
 
         Session = sessionmaker(bind=self.engine)
         session = Session()
 
+        # First: locate the object robustly (try the eval-style filter used in other functions,
+        # fall back to session.get(obj_type, obj_id) if that fails).
+        obj = None
         try:
-            res = session.query(obj_type).get(obj_id)
-            if res is None:
-                raise ValueError("The specified row does not exist")
-            objectData = self.GetObj(obj_type, obj_id)
-            session.delete(res)
-            session.info["operation_id"] = operation_id  # Pass the operation id
             try:
-                if not disable_logging:
-                    self.log_changes_before_commit(session)
-                session.commit()
-                self.handleWebhook(objectData, 'DELETE')
-            except Exception as E:
-                self.logTool.log(service='Database', level='error', message=f"Failed to commit session, error: {E}", redisClient=self.redisMessaging)
-                self.safe_rollback(session)
-                raise ValueError(E)
+                obj_type_str = str(obj_type.__table__.name).upper()
+                filter_input = eval(obj_type_str + "." + obj_type_str.lower() + "_id==obj_id")
+                obj = session.query(obj_type).filter(filter_input).one()
+            except Exception:
+                # fallback to session.get (SQLAlchemy 1.4+)
+                try:
+                    obj = session.get(obj_type, obj_id)
+                except Exception:
+                    # fallback to a query by primary key column using generic filter
+                    # attempt to figure out PK name
+                    try:
+                        pk_cols = [c.name for c in obj_type.__table__.primary_key.columns]
+                        if pk_cols:
+                            pkname = pk_cols[0]
+                            obj = session.query(obj_type).filter(getattr(obj_type, pkname) == obj_id).one()
+                        else:
+                            raise
+                    except Exception as inner_e:
+                        self.safe_close(session)
+                        raise ValueError(f"Unable to locate object {obj_type} with id {obj_id}: {inner_e}")
+
+            if obj is None:
+                self.safe_close(session)
+                raise ValueError(f"Object not found: {obj_type} id {obj_id}")
 
         except Exception as E:
-            self.logTool.log(service='Database', level='error', message=f"Exception in DeleteObj, error: {E}", redisClient=self.redisMessaging)
+            self.safe_close(session)
+            self.logTool.log(service='Database', level='error', message=f"Failed to fetch object for DeleteObj: {E}", redisClient=self.redisMessaging)
             raise ValueError(E)
+
+        # Build payload for webhook / return BEFORE deletion (snapshot of previous state)
+        try:
+            # shallow copy of attributes
+            pre_delete = obj.__dict__.copy()
+            pre_delete.pop('_sa_instance_state', None)
+            objectData = self.Sanitize_Datetime(pre_delete)
+        except Exception:
+            objectData = {"id": obj_id}
+
+        try:
+            session.info["operation_id"] = operation_id
+
+            # Allow logging hooks to record the impending delete
+            if not disable_logging:
+                try:
+                    self.log_changes_before_commit(session)
+                except Exception as log_exc:
+                    # don't prevent deletion because logging failed
+                    self.logTool.log(service='Database', level='warning', message=f"log_changes_before_commit raised during DeleteObj: {log_exc}", redisClient=self.redisMessaging)
+
+            # delete and flush
+            session.delete(obj)
+            session.flush()
+
+            # commit
+            session.commit()
+
+            # notify via webhook (non-fatal)
+            try:
+                self.handleWebhook(objectData, 'DELETE')
+            except Exception as webhook_exc:
+                self.logTool.log(service='Database', level='warning', message=f"Webhook failed after DeleteObj commit: {webhook_exc}", redisClient=self.redisMessaging)
+
+        except Exception as E:
+            self.logTool.log(service='Database', level='error', message=f"Failed to delete object in DeleteObj: {traceback.format_exc()}", redisClient=self.redisMessaging)
+            self.safe_rollback(session)
+            self.safe_close(session)
+            raise ValueError(E)
+
         finally:
             self.safe_close(session)
 
-        return {'Result': 'OK'}
-
+        return objectData
 
     def CreateObj(self, obj_type, json_data, disable_logging=False, operation_id=None):
-        self.logTool.log(service='Database', level='debug', message="Called CreateObj to create " + str(obj_type) + " with value: " + str(json_data), redisClient=self.redisMessaging)
-        last_modified_value = datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
-        json_data["last_modified"] = last_modified_value  # set last_modified value in json_data
-        newObj = obj_type(**json_data)
+        """
+        Create a new object of type `obj_type` using `json_data`.
+        - Adds the object to the session, flushes to populate DB defaults/PKs,
+          builds objectData from the in-memory object, commits, and sends webhook.
+        """
+        self.logTool.log(
+            service='Database',
+            level='debug',
+            message=f"Called CreateObj() for type {obj_type} with JSON data: {json_data} and operation_id: {operation_id}",
+            redisClient=self.redisMessaging
+        )
+
         Session = sessionmaker(bind=self.engine)
         session = Session()
 
-        session.add(newObj)
         try:
-            session.info["operation_id"] = operation_id  # Pass the operation id
+            # Instantiate the object and set attributes that exist
             try:
-                if not disable_logging:
-                    self.log_changes_before_commit(session)
-                session.commit()
+                obj = obj_type()
+                for key, value in json_data.items():
+                    if hasattr(obj, key):
+                        setattr(obj, key, value)
             except Exception as E:
-                self.logTool.log(service='Database', level='error', message=f"Failed to commit session, error: {E}", redisClient=self.redisMessaging)
+                self.logTool.log(service='Database', level='error', message=f"Failed to instantiate object {obj_type}: {E}", redisClient=self.redisMessaging)
+                self.safe_close(session)
+                raise ValueError(E)
+
+            # Optionally set created/last_modified fields if present
+            try:
+                now_str = datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+                if hasattr(obj, "last_modified"):
+                    setattr(obj, "last_modified", now_str)
+                if hasattr(obj, "created_at") and getattr(obj, "created_at", None) is None:
+                    setattr(obj, "created_at", now_str)
+            except Exception:
+                pass
+
+            # Add to session and commit after flush
+            session.add(obj)
+
+            try:
+                session.info["operation_id"] = operation_id
+
+                # Allow operation logging hooks to inspect session state before commit
+                if not disable_logging:
+                    try:
+                        self.log_changes_before_commit(session)
+                    except Exception as log_exc:
+                        # logging shouldn't prevent commit; just log that logging failed
+                        self.logTool.log(service='Database', level='warning', message=f"log_changes_before_commit raised: {log_exc}", redisClient=self.redisMessaging)
+
+                # flush to obtain generated primary key(s) and DB defaults
+                session.flush()
+
+                # Build objectData from the in-memory object (safe copy)
+                result = obj.__dict__.copy()
+                result.pop('_sa_instance_state', None)
+                objectData = self.Sanitize_Datetime(result)
+
+                # commit the transaction
+                session.commit()
+
+                # Post-commit webhook (non-fatal)
+                try:
+                    self.handleWebhook(objectData, 'POST')
+                except Exception as webhook_exc:
+                    self.logTool.log(service='Database', level='warning', message=f"Webhook failed after CreateObj commit: {webhook_exc}", redisClient=self.redisMessaging)
+
+            except Exception as E:
+                # Rollback on error and re-raise as ValueError for calling code
+                self.logTool.log(service='Database', level='error', message=f"Failed to commit session in CreateObj: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 self.safe_rollback(session)
                 raise ValueError(E)
-            session.refresh(newObj)
-            result = newObj.__dict__
-            result.pop('_sa_instance_state')
-            self.handleWebhook(result, 'PUT')
-            return result
-        except Exception as E:
-            self.logTool.log(service='Database', level='error', message=f"Exception in CreateObj, error: {E}", redisClient=self.redisMessaging)
-            raise ValueError(E)
+
         finally:
             self.safe_close(session)
+
+        return objectData
 
     def Generate_JSON_Model_for_Flask(self, obj_type):
         self.logTool.log(service='Database', level='debug', message="Generating JSON model for Flask for object type: " + str(obj_type), redisClient=self.redisMessaging)
