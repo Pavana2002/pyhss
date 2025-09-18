@@ -88,45 +88,54 @@ class DatabaseService:
         except Exception as E:
             self.logTool.log(service='Database', level='error', message=f"[Database] [safeClose] Failed to safely close session: {traceback.format_exc()}", redisClient=self.redisLogMessaging)
 
-    async def readDatabase(self):
-        """
-        Reads all database records and caches them into Redis.
-        """
-        while True:
-            try:
-                self.logTool.log(service='Database', level='debug', message=f"[Database] [readDatabase] Starting Read from database.", redisClient=self.redisLogMessaging)
-                databaseMetadata = MetaData()
-                databaseConnection = self.sqlAlchemyEngine.connect()
-                databaseMetadata.reflect(bind=databaseConnection) 
-                self.readSession = self.sqlAlchemySession()
+# replace readDatabase() body with this approach
+async def readDatabase(self):
+    # reflect once
+    databaseMetadata = MetaData()
+    # connect and reflect ONCE at startup
+    with self.sqlAlchemyEngine.connect() as databaseConnection:
+        databaseMetadata.reflect(bind=databaseConnection)
+    # build a stable map: tableName -> (table, primaryKeyName)
+    table_map = {}
+    for tableName, tableObj in databaseMetadata.tables.items():
+        pk_cols = [c.name for c in tableObj.primary_key.columns]
+        if not pk_cols:
+            continue
+        table_map[tableName] = (tableObj, pk_cols[0])
 
-                for tableName in databaseMetadata.tables:
-                    tableObject = Table(tableName, databaseMetadata, autoloaded=True)
-                    primaryKeyColumnNames = [primaryKeyColumn.name for primaryKeyColumn in tableObject.primary_key.columns.values()]
-                    if not primaryKeyColumnNames:
-                        continue
-                    primaryKeyName = primaryKeyColumnNames[0]
-                    records = self.readSession.query(tableObject).all()
-                    for record in records:
-                        recordDict = dict(record._mapping)
-                        recordJson = json.dumps(recordDict, default=self.sanitizeJson)
-                        self.logTool.log(service='Database', level='debug', message=f"[Database] [readDatabase] Updating Cache: {recordJson}", redisClient=self.redisLogMessaging)
-                        recordId = primaryKeyName
-                        await(self.redisDatabaseReadMessaging.sendMessage(queue=f'{tableName}', message=f"{recordId}:{recordJson}", queueExpiry=None, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='database'))
-                try:
-                    self.safeClose(self.readSession)
-                except:
-                    pass
-                self.logTool.log(service='Database', level='debug', message=f"[Database] [readDatabase] Finished Read from database.", redisClient=self.redisLogMessaging)
-                await(asyncio.sleep(self.cacheReadInterval))
-
-            except Exception as e:
-                self.logTool.log(service='Database', level='error', message=f"[Database] [readDatabase] Error: {traceback.format_exc()}", redisClient=self.redisLogMessaging)
-                try:
-                    self.safeClose(self.readSession)
-                except:
-                    pass
-                await(asyncio.sleep(self.cacheReadInterval))
+    while True:
+        try:
+            # use single session for full pass
+            session = self.sqlAlchemySession()
+            # for each table, stream rows in chunks
+            for tableName, (tableObj, pkname) in table_map.items():
+                # use select() and chunking (yield_per)
+                q = session.query(tableObj).yield_per(500)
+                batch = []
+                # use pipeline if your RedisMessagingAsync supports it, otherwise collect messages
+                async_sends = []
+                for row in q:
+                    recordDict = dict(row._mapping)
+                    recordJson = json.dumps(recordDict, default=self.sanitizeJson)
+                    # get real id value
+                    recordId = recordDict.get(pkname)
+                    # build message
+                    msg = f"{recordId}:{recordJson}"
+                    batch.append(msg)
+                    # when batch size reaches threshold, send as group
+                    if len(batch) >= 200:
+                        # perform bulk send (pseudo)
+                        await self.redisDatabaseReadMessaging.send_bulk(queue=tableName, messages=batch, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='database')
+                        batch = []
+                if batch:
+                    await self.redisDatabaseReadMessaging.send_bulk(queue=tableName, messages=batch, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='database')
+            session.close()
+            await asyncio.sleep(self.cacheReadInterval)
+        except Exception as e:
+            self.logTool.log(service='Database', level='error', message=f"[Database] [readDatabase] Error: {traceback.format_exc()}", redisClient=self.redisLogMessaging)
+            try: session.close()
+            except: pass
+            await asyncio.sleep(self.cacheReadInterval)
 
     async def startService(self):
         """
