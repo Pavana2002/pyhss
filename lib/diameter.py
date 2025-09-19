@@ -2593,7 +2593,6 @@ class Diameter:
                             """
                             If we've recieved a CCR-Terminate, delete the emergency subscriber.
                             """
-
                             try:
                                 ueIp = self.get_avp_data(avps, 8)[0]
                                 ueIp = str(self.hex_to_ip(ueIp))
