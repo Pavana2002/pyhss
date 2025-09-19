@@ -2557,13 +2557,16 @@ class PyHSS_PCRF_CLR_Subscriber(Resource):
                 CancellationType=2,
                 immediateReattach=True
             )
-            
+            if diameterRequest == '':
+                result = {"Result": f"Unable to send Cancel Location Request via {servingMmePeer} for IMSI {imsi} - is the diameter peer connected?"}
+                return result, 400
             result = {"Result": f"Successfully sent Cancel Location Request via {servingMmePeer} for IMSI {imsi}"}
             return result, 200
 
         except Exception as E:
             print("Flask Exception: " + str(E))
-            return handle_exception(E)
+            result = {"Result": f"Unahndled error: {E}"}
+            return result, 500
 
 @ns_pcrf.route('/pcscf_restoration_subscriber')
 class PyHSS_PCRF_PSCSF_Restoration_Subscriber(Resource):

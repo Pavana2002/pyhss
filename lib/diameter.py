@@ -57,6 +57,9 @@ class Diameter:
         self.diameterPeerKey = self.config.get('hss', {}).get('diameter_peer_key', 'diameterPeers')
         self.useDraFallback = self.config.get('hss', {}).get('use_dra_fallback', False)
         self.emergency_subscriber_expiry = self.config.get('hss', {}).get('emergency_subscriber_expiry', 3600)
+        self.sendDsrOnMmeChange = self.config.get('hss', {}).get('send_dsr_on_mme_change', False)
+        self.dsrExternalIdentifier = self.config.get('hss', {}).get('dsr_external_identifier', "subscriber")
+        self.ignorePurgeUeRequest = self.config.get('hss', {}).get('ignore_purge_ue_request', False)
 
         self.templateLoader = jinja2.FileSystemLoader(searchpath="../")
         self.templateEnv = jinja2.Environment(loader=self.templateLoader)
@@ -116,6 +119,8 @@ class Diameter:
                 # S6a MME
                 {"commandCode": 317, "applicationId": 16777251, "requestMethod": self.Request_16777251_317, "failureResultCode": 5012 ,"requestAcronym": "CLR", "responseAcronym": "CLA", "requestName": "Cancel Location Request", "responseName": "Cancel Location Answer"},
                 {"commandCode": 319, "applicationId": 16777251, "requestMethod": self.Request_16777251_319, "failureResultCode": 5012 ,"requestAcronym": "ISD", "responseAcronym": "ISA", "requestName": "Insert Subscriber Data Request", "responseName": "Insert Subscriber Data Answer"},
+                {"commandCode": 320, "applicationId": 16777251, "requestMethod": self.Request_16777251_320, "failureResultCode": 5012 ,"requestAcronym": "DSR", "responseAcronym": "DSR", "requestName": "Delete Subscriber Data Request", "responseName": "Delete Subscriber Data Answer"}
+
         ]
 
     #Generates rounding for calculating padding
@@ -2141,6 +2146,28 @@ class Diameter:
 
         avp += self.generate_vendor_avp(1400, "c0", 10415, subscription_data)                            #Subscription-Data
 
+        # Send DSR to Old MME if enabled
+        if self.sendDsrOnMmeChange == True:
+            try:
+                maybeServingMmePeer = subscriber_details.get('serving_mme_peer')
+                if maybeServingMmePeer != None:
+                    servingMmePeer = maybeServingMmePeer.split(';')[0]
+                    servingMme = subscriber_details.get('serving_mme')
+                    servingMmeRealm = subscriber_details.get('serving_mme_realm')
+                    new_serving_mme = OriginHost
+                    if len(servingMmePeer) > 0 and new_serving_mme != servingMme:
+                        self.logTool.log(service='HSS', level='debug', message=f"MME Serving UE has changed from: {servingMme} to {new_serving_mme}, Sending DSR.", redisClient=self.redisMessaging)
+                        self.sendDiameterRequest(
+                                            requestType='DSR',
+                                            hostname=servingMmePeer,
+                                            imsi=imsi,
+                                            DestinationHost=servingMme, 
+                                            DestinationRealm=servingMmeRealm,
+                                            ExternalIdentifier=self.dsrExternalIdentifier
+                                            )
+            except Exception as e:
+                self.logTool.log(service='HSS', level='debug', message=f"Error sending DSR: {e}", redisClient=self.redisMessaging)
+
         response = self.generate_diameter_packet("01", "40", 316, 16777251, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
 
         self.logTool.log(service='HSS', level='debug', message="Successfully Generated ULA", redisClient=self.redisMessaging)
@@ -2376,8 +2403,8 @@ class Diameter:
 
         response = self.generate_diameter_packet("01", "40", 321, 16777251, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
         
-
-        self.database.Update_Serving_MME(imsi, None)
+        if self.ignorePurgeUeRequest == False:
+            self.database.Update_Serving_MME(imsi, None)
         self.logTool.log(service='HSS', level='debug', message="Successfully Generated PUA", redisClient=self.redisMessaging)
         return response
 
@@ -3711,11 +3738,13 @@ class Diameter:
                         # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
                         valid_media_types = [0, 1]
                         if int(mediaType, 16) not in valid_media_types:
+                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
                             if int(mediaType, 16) == 4:
-                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} doesn't need charging rule", redisClient=self.redisMessaging)
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} doesn't need charging rule", redisClient=self.redisMessaging)
                             else:                                
-                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
-                        assert(int(mediaType, 16) in valid_media_types)
+                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} is incorrect - Is not AUDIO or VIDEO or CONTROL", redisClient=self.redisMessaging)
+                            continue
+                        #assert(int(mediaType, 16) in valid_media_types)
                         # At this point, we know the AAR is indicating a call setup, so we'll get the serving pgw information, then send a 
                         # RAR to the PGW over Gx, asking it to setup the dedicated bearer.
 
@@ -3980,11 +4009,11 @@ class Diameter:
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
 
                         except Exception as e:
-                            self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, Authorizing request: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                            self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, declining request: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                            avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
                 except Exception as e:
                     self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error generating AAA Charging Rule: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                    avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                    avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
                     pass
             else:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Request unauthorized", redisClient=self.redisMessaging)
@@ -4203,13 +4232,13 @@ class Diameter:
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
-            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 2001", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 5001", redisClient=self.redisMessaging)
             avp = ''
             sessionId = self.get_avp_data(avps, 263)[0]                                                       #Get Session-ID
             avp += self.generate_avp(263, 40, sessionId)                                                    #Set session ID to received session ID
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
 
@@ -4740,6 +4769,26 @@ class Diameter:
         avp += self.generate_vendor_avp(1400, "c0", 10415, subscription_data)                            #Subscription-Data
 
         response = self.generate_diameter_packet("01", "C0", 319, 16777251, self.generate_id(4), self.generate_id(4), avp)     #Generate Diameter packet
+        return response
+    
+    #3GPP S6a/S6d Delete Subscriber Data Request (DSR)
+    def Request_16777251_320(self, imsi, DestinationRealm, DestinationHost, ExternalIdentifier=None, **kwargs):
+        avp = ''                                                                                    #Initiate empty var AVP
+        sessionid = str(bytes.fromhex(self.OriginHost).decode('ascii')) + ';' + self.generate_id(5) + ';1;app_s6a' #Session ID generate
+        avp += self.generate_avp(263, 40, str(binascii.hexlify(str.encode(sessionid)),'ascii'))     #Session ID set AVP
+        avp += self.generate_avp(260, 40, "000001024000000c" + format(int(16777251),"x").zfill(8) +  "0000010a4000000c000028af") #Vendor-Specific-Application-ID (S6a) 
+        avp += self.generate_avp(277, 40, "00000001")                                               #Auth-Session-State
+        avp += self.generate_avp(264, 40, self.OriginHost)                                          #Origin Host
+        avp += self.generate_avp(296, 40, self.OriginRealm)                                         #Origin Realm
+        avp += self.generate_avp(293, 40, self.string_to_hex(DestinationHost))                      #Destination Host
+        avp += self.generate_avp(283, 40, self.string_to_hex(DestinationRealm))                     #Destination Realm
+        avp += self.generate_avp(1, 40, self.string_to_hex(imsi))                                   #Username (IMSI)
+        avp += self.generate_vendor_avp(1421, "c0", 10415, "00000000")                              #DSR-Flags val=0
+
+        if ExternalIdentifier != None:
+            avp += self.generate_vendor_avp(3111, "c0", 10415, self.string_to_hex(ExternalIdentifier))  #External-Identifier
+
+        response = self.generate_diameter_packet("01", "C0", 320, 16777251, self.generate_id(4), self.generate_id(4), avp) #Generate Diameter packet
         return response
 
     #3GPP Cx Location Information Request (LIR)
