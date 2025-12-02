@@ -4272,7 +4272,7 @@ class Diameter:
                 # We could not successfully remove any rule for this Rx session
                 result_code = 5001  # Using AVP_UNSUPPORTED as generic "policy error" as per your existing mapping
                 self.logTool.log(service='HSS', level='warning',
-                                 message=f"[diameter.py] [Answer_16777236_275] [STA] No rules removed successfully – returning Result-Code {result_code}",
+                                 message=f"[diameter.py] [Answer_16777236_275] [STA] No rules removed successfully: returning Result-Code {result_code}",
                                  redisClient=self.redisMessaging)
 
             avp += self.generate_avp(268, 40, self.int_to_hex(result_code, 4))
