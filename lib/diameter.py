@@ -4266,7 +4266,7 @@ class Diameter:
             if reauth_success:
                 result_code = 2001  # Success
                 self.logTool.log(service='HSS', level='debug',
-                                 message=f"[diameter.py] [Answer_16777236_275] [STA] At least one rule removed successfully – returning Result-Code {result_code}",
+                                 message=f"[diameter.py] [Answer_16777236_275] [STA] At least one rule removed successfully: returning Result-Code {result_code}",
                                  redisClient=self.redisMessaging)
             else:
                 # We could not successfully remove any rule for this Rx session
