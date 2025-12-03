@@ -3354,7 +3354,6 @@ class Diameter:
                 if "@" in public_identity:
                     imsi = public_identity.split('@')[0]   #Strip Domain
                     domain = public_identity.split('@')[1] #Get Domain Part
-                    public_identity = imsi
                 
                 if len(public_identity) == 15:
                     imsi = public_identity
@@ -3566,6 +3565,8 @@ class Diameter:
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
             avp += self.generate_vendor_avp(628, 80, 10415, "0000010a4000000c000028af0000027580000010000028af000000010000027680000010000028af00000001") #Supported Features
+            
+            rAAAResultCode = 5001
 
             subscriptionId = bytes.fromhex(self.get_avp_data(avps, 444)[0]).decode('ascii')
             self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Received subscription ID: {subscriptionId}", redisClient=self.redisMessaging)
@@ -3735,7 +3736,8 @@ class Diameter:
                         # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
                         valid_media_types = [0, 1]
                         if int(mediaType, 16) not in valid_media_types:
-                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                            #avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                            rAAAResultCode = 2001
                             if int(mediaType, 16) == 4:
                                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} doesn't need charging rule", redisClient=self.redisMessaging)
                             else:                                
@@ -3999,23 +4001,29 @@ class Diameter:
                             raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
 
                             if raaResultCode == 2001:
-	                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+	                            # avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                                rAAAResultCode = 2001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
                             else:
-	                            avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+	                            # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+                                rAAAResultCode = 4001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
 
                         except Exception as e:
                             self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, declining request: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                            #avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+                            rAAAResultCode = 4001
                 except Exception as e:
                     self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error generating AAA Charging Rule: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                    avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                    # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+                    rAAAResultCode = 4001
                     pass
             else:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Request unauthorized", redisClient=self.redisMessaging)
-                avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+                # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
+                rAAAResultCode = 4001
 
+            avp += self.generate_avp(268, 40, self.int_to_hex(rAAAResultCode, 4))
             response = self.generate_diameter_packet("01", "40", 265, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
@@ -4220,19 +4228,22 @@ class Diameter:
                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
 
             else:
-                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Unable to find serving APN for RAR, returning Result-Code 2001", redisClient=self.redisMessaging)
+                avp += self.generate_avp(268, 40, self.int_to_hex(5012, 4))
+                response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
+                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Unable to find serving APN for RAR received for IMSI[{imsi}] APN[{apn}] - session not found, returning Result-Code 5012", redisClient=self.redisMessaging)
+                return response
 
             avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
-            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 2001", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 5001", redisClient=self.redisMessaging)
             avp = ''
             sessionId = self.get_avp_data(avps, 263)[0]                                                       #Get Session-ID
             avp += self.generate_avp(263, 40, sessionId)                                                    #Set session ID to received session ID
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
 
