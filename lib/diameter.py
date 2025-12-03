@@ -4001,26 +4001,21 @@ class Diameter:
                             raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
 
                             if raaResultCode == 2001:
-	                            # avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
-                                rAAAResultCode = 2001
+	                            rAAAResultCode = 2001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
                             else:
-	                            # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
-                                rAAAResultCode = 4001
+	                            rAAAResultCode = 4001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
 
                         except Exception as e:
                             self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error processing RAR / RAA, declining request: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                            #avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
                             rAAAResultCode = 4001
                 except Exception as e:
                     self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Error generating AAA Charging Rule: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                    # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
                     rAAAResultCode = 4001
                     pass
             else:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Request unauthorized", redisClient=self.redisMessaging)
-                # avp += self.generate_avp(268, 40, self.int_to_hex(4001, 4))
                 rAAAResultCode = 4001
 
             avp += self.generate_avp(268, 40, self.int_to_hex(rAAAResultCode, 4))
