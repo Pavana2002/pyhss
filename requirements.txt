@@ -7,14 +7,14 @@ prometheus_client==0.16.0
 pycryptodome==3.17
 pymongo==4.3.3
 pysctp==0.7.2
-pyosmocom
+pyosmocom==0.0.11
 comp128==1.0.0
 alembic
 pysnmp==4.4.12
 PyYAML
 redis==5.0.0
 Requests==2.31.0
-SQLAlchemy==2.0.9
+SQLAlchemy==2.0.44
 SQLAlchemy_Utils==0.41.1
 Werkzeug==2.2.3
 mysqlclient

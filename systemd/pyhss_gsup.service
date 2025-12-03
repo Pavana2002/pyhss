@@ -1,7 +1,6 @@
 [Unit]
-Description=PyHSS HSS Service
+Description=PyHSS GSUP Service
 PartOf=pyhss.service
-
 
 [Service]
 Environment="PYTHONUNBUFFERED=1"

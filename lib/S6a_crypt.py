@@ -5,18 +5,7 @@ import binascii
 import logging
 import os
 import sys
-sys.path.append(os.path.realpath('../'))
-import yaml
 
-try:
-    with open("../config.yaml", 'r') as stream:
-        config = (yaml.safe_load(stream))
-except:
-    with open("config.yaml", 'r') as stream:
-        config = (yaml.safe_load(stream))
-
-# logtool = logtool.LogTool()
-# logtool.setup_logger('CryptoLogger', yaml_config['logging']['logfiles']['database_logging_file'], level=yaml_config['logging']['level'])
 CryptoLogger = logging.getLogger('CryptoLogger')
 
 CryptoLogger.info("Initialised Diameter Logger, importing database")
@@ -147,7 +136,7 @@ def generate_2g3g_vector(key, op_c, amf, sqn, algo):
         sres, kc = crypto_obj.comp128v2(bytearray(key), rand)
     elif algo == 3:
         crypto_obj = Comp128v23()
-        sres, kc = crypto_obj.comp128v3(bytearray(key), rand, sres, kc)
+        sres, kc = crypto_obj.comp128v3(bytearray(key), rand)
 
     # Case: SIM only supports 2G Auth
     if op_c == b'':
