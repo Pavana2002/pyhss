@@ -3566,7 +3566,7 @@ class Diameter:
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
             avp += self.generate_vendor_avp(628, 80, 10415, "0000010a4000000c000028af0000027580000010000028af000000010000027680000010000028af00000001") #Supported Features
             
-            rAAAResultCode = 5001
+            rAAAResultCode = 2001
 
             subscriptionId = bytes.fromhex(self.get_avp_data(avps, 444)[0]).decode('ascii')
             self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Received subscription ID: {subscriptionId}", redisClient=self.redisMessaging)
@@ -3736,7 +3736,6 @@ class Diameter:
                         # In order to send a Gx RAR, we need to ensure that mediaType is AUDIO(0) or VIDEO(1)
                         valid_media_types = [0, 1]
                         if int(mediaType, 16) not in valid_media_types:
-                            #avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
                             rAAAResultCode = 2001
                             if int(mediaType, 16) == 4:
                                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_265] [AAA] Media type with value {mediaType} doesn't need charging rule", redisClient=self.redisMessaging)
@@ -4108,7 +4107,7 @@ class Diameter:
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
             
-            rSTAResultCode = 5001
+            rSTAResultCode = 2001
             servingApn = None
             try:
                 imsSubscriber = self.database.Get_IMS_Subscriber_By_Session_Id(sessionId=sessionId)
@@ -4197,10 +4196,12 @@ class Diameter:
                         raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
 
                         if raaResultCode == 2001:
+                            rSTAResultCode = 2001
                             self.logTool.log(service='HSS', level='debug',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Successfully removed rule: {rule_name}",
                                 redisClient=self.redisMessaging)
                         else:
+                            rSTAResultCode = 5001
                             self.logTool.log(service='HSS', level='warning',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Failed to remove rule: {rule_name} (Result-Code: {raaResultCode})",
                                 redisClient=self.redisMessaging)
