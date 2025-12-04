@@ -4171,7 +4171,7 @@ class Diameter:
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Successfully removed rule: {rule_name}",
                                 redisClient=self.redisMessaging)
                         else:
-                            rSTAResultCode = 5001
+                            rSTAResultCode = 2001
                             self.logTool.log(service='HSS', level='warning',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Failed to remove rule: {rule_name} (Result-Code: {raaResultCode})",
                                 redisClient=self.redisMessaging)
@@ -4192,7 +4192,7 @@ class Diameter:
                     rSTAResultCode = 2001
                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
                 else:
-                    rSTAResultCode = 5001
+                    rSTAResultCode = 2001
                     self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
 
             else:
@@ -4211,7 +4211,7 @@ class Diameter:
             avp += self.generate_avp(263, 40, sessionId)                                                    #Set session ID to received session ID
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
+            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
 
