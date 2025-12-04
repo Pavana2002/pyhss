@@ -20,12 +20,8 @@ import re
 from baseModels import Peer, OutboundData
 import pydantic_core
 import xml.etree.ElementTree as ET
-import threading
 from pyhss_config import config
 
-# Simple in-memory store to track active IMSIs or Session-Ids
-SESSION_TTL = 60  # seconds
-active_sessions = {}  # IMSI ? {created, last_session_id}
 
 class Diameter:
 
@@ -1819,28 +1815,6 @@ class Diameter:
     def Answer_16777251_316(self, packet_vars, avps):
         avp = ''                                                                                    #Initiate empty var AVP
         session_id = self.get_avp_data(avps, 263)[0]                                                     #Get Session-ID
-        imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
-        imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
-        
-        now = time.time()
-
-        if imsi not in active_sessions:
-            active_sessions[imsi] = {
-                "created": now,
-                "last_session_id": session_id
-            }
-            self.logTool.log(service='HSS', level='debug',
-                message=f"[SessionTracker] New IMSI session: {imsi} ? {session_id}",
-                redisClient=self.redisMessaging)
-
-        elif now - active_sessions[imsi]["created"] > SESSION_TTL:
-            self.logTool.log(service='HSS', level='warning',
-                message=f"[ULA_SUPPRESS] IMSI {imsi} expired. Dropping ULA.",
-                redisClient=self.redisMessaging)
-            return None
-        else:
-            active_sessions[imsi]["last_session_id"] = session_id
-    
         avp += self.generate_avp(263, 40, session_id)                                                    #Session-ID AVP set
         avp += self.generate_avp(264, 40, self.OriginHost)                                                    #Origin Host
         avp += self.generate_avp(296, 40, self.OriginRealm)                                                   #Origin Realm
@@ -1860,9 +1834,8 @@ class Diameter:
 
         #APNs from DB
         APN_Configuration = ''
-        #imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
-        #imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
-        
+        imsi = self.get_avp_data(avps, 1)[0]                                                            #Get IMSI from User-Name AVP in request
+        imsi = binascii.unhexlify(imsi).decode('utf-8')                                                  #Convert IMSI
         try:
             subscriber_details = self.database.Get_Subscriber(imsi=imsi)                                               #Get subscriber details
             self.logTool.log(service='HSS', level='debug', message="Got back subscriber_details: " + str(subscriber_details), redisClient=self.redisMessaging)
@@ -2812,10 +2785,6 @@ class Diameter:
 
             # CCR - Termination Request
             elif int(CC_Request_Type) == 3:
-                if imsi in active_sessions:
-                    del active_sessions[imsi]
-
-                
                 self.logTool.log(service='HSS', level='debug', message="[diameter.py] [Answer_16777238_272] [CCA] Request type for CCA is 3 - Termination", redisClient=self.redisMessaging)
                 session_id_string = str(binascii.unhexlify(session_id).decode())
                 subscriber_details = self.database.Get_Subscriber(imsi=imsi)
@@ -3354,6 +3323,7 @@ class Diameter:
                 if "@" in public_identity:
                     imsi = public_identity.split('@')[0]   #Strip Domain
                     domain = public_identity.split('@')[1] #Get Domain Part
+                    public_identity = imsi
                 
                 if len(public_identity) == 15:
                     imsi = public_identity
@@ -5215,15 +5185,3 @@ class Diameter:
 
         response = self.generate_diameter_packet("01", "c0", 324, 16777252, self.generate_id(4), self.generate_id(4), avp)     #Generate Diameter packet
         return response
-
-
-def cleanup_sessions():
-    while True:
-        now = time.time()
-        expired = [imsi for imsi, data in active_sessions.items()
-                   if now - data["created"] > SESSION_TTL]
-        for imsi in expired:
-            del active_sessions[imsi]
-        time.sleep(10)
-
-threading.Thread(target=cleanup_sessions, daemon=True).start()
