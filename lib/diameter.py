@@ -4095,25 +4095,25 @@ class Diameter:
                         localGeoredEndpoints = config.get('geored', {}).get('local_endpoints', [])
                         for localGeoredEndpoint in localGeoredEndpoints:
                             endpointUrl = f"{localGeoredEndpoint}/pcrf/pcrf_subscriber_imsi/{imsi}"
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Searching remote HSS for serving apn: {endpointUrl}", redisClient=self.redisMessaging)
+                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Searching remote HSS for serving apn: {endpointUrl}", redisClient=self.redisMessaging)
                             response = requests.get(url=endpointUrl, timeout=1)
                             responseJson = response.json()
                             if not responseJson:
                                 continue
-                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Recieved response from remote HSS: {responseJson}", redisClient=self.redisMessaging)
+                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Recieved response from remote HSS: {responseJson}", redisClient=self.redisMessaging)
                             remoteServingApn = responseJson
                             servingImsApn = remoteServingApn.get('apns', {}).get('ims', {})
                             if servingImsApn:
                                 servingApn = servingImsApn
                 except:
-                    self.logTool.log(service='HSS', level='warning', message=f"[diameter.py] [Answer_16777236_275] [STA] Error Searching remote HSS for serving apn: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error Searching remote HSS for serving apn: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 if servingApn is not None:
                     servingPgw = servingApn.get('serving_pgw', '')
                     servingPgwRealm = servingApn.get('serving_pgw_realm', '')
                     servingPgwPeer = servingApn.get('serving_pgw_peer', '').split(';')[0]
                     pcrfSessionId = servingApn.get('pcrf_session_id', None)
                 else:
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] No servingApn defined for IMS Subscriber", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] No servingApn defined for IMS Subscriber", redisClient=self.redisMessaging)
                 self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=pcscf, pcscf_realm=pcscf_realm, pcscf_peer=pcscf_peer, pcscf_active_session=None)
             except Exception as e:
                 pass
@@ -4125,9 +4125,9 @@ class Diameter:
                 emergencySubscriberData = self.database.Get_Emergency_Subscriber(rxSessionId=sessionId)
                 if emergencySubscriberData:
                     emergencySubscriber = True
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Found emergency subscriber with Rx Session: {sessionId}", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Found emergency subscriber with Rx Session: {sessionId}", redisClient=self.redisMessaging)
             except Exception as e:
-                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Emergency Subscriber Data: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Emergency Subscriber Data: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 emergencySubscriberData = None
             
             if emergencySubscriberData:
@@ -4139,9 +4139,9 @@ class Diameter:
             try:
                 aarSessionID = self.get_avp_data(avps, 263)[0]
                 aarSessionID = bytes.fromhex(aarSessionID).decode('ascii')
-                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Got Original SessionID: {aarSessionID}", redisClient=self.redisMessaging)
+                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Got Original SessionID: {aarSessionID}", redisClient=self.redisMessaging)
             except:
-                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Original SessionID: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Original SessionID: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 aarSessionID = ""
             if servingApn is not None or emergencySubscriberData:
                 
@@ -4157,7 +4157,7 @@ class Diameter:
                             chargingRuleAction='remove'
                         )
                         if not len(reAuthAnswer) > 0:
-                            self.logTool.log(service='HSS', level='warning',
+                            self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout for rule: {rule_name}",
                                 redisClient=self.redisMessaging)
                             continue
@@ -4167,22 +4167,23 @@ class Diameter:
 
                         if raaResultCode == 2001:
                             rSTAResultCode = 2001
-                            self.logTool.log(service='HSS', level='debug',
+                            self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Successfully removed rule: {rule_name}",
                                 redisClient=self.redisMessaging)
                         else:
                             rSTAResultCode = 5001
-                            self.logTool.log(service='HSS', level='warning',
+                            self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Failed to remove rule: {rule_name} (Result-Code: {raaResultCode})",
                                 redisClient=self.redisMessaging)
 
                     except Exception as e:
-                        self.logTool.log(service='HSS', level='error',
+                        rSTAResultCode = 5001
+                        self.logTool.log(service='HSS', level='info',
                             message=f"[diameter.py] [Answer_16777236_275] [STA] Exception while removing rule {rule_name}: {traceback.format_exc()}",
                             redisClient=self.redisMessaging)
 
                 if not len(reAuthAnswer) > 0:
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
                     assert()
                 
                 raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
@@ -4190,10 +4191,10 @@ class Diameter:
 
                 if raaResultCode == 2001:
                     rSTAResultCode = 2001
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
                 else:
                     rSTAResultCode = 5001
-                    self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
 
             else:
                 avp += self.generate_avp(268, 40, self.int_to_hex(5012, 4))
@@ -4205,13 +4206,13 @@ class Diameter:
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
-            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 5001", redisClient=self.redisMessaging)
+            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 5001", redisClient=self.redisMessaging)
             avp = ''
             sessionId = self.get_avp_data(avps, 263)[0]                                                       #Get Session-ID
             avp += self.generate_avp(263, 40, sessionId)                                                    #Set session ID to received session ID
             avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
             avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
 
