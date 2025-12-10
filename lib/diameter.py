@@ -1100,7 +1100,7 @@ class Diameter:
             for diameterApplication in self.diameterRequestList:
                 try:
                     assert(requestType == diameterApplication["requestAcronym"])
-                except Exception as e:
+                except Exception:
                     continue
                 connectedPeer = self.getPeerByHostname(hostname=hostname)
                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Sending request via connected peer {connectedPeer} from hostname {hostname}", redisClient=self.redisMessaging)
@@ -1126,12 +1126,29 @@ class Diameter:
                                                 DestinationPort=peerPort,
                                                 InitialReceiveTimestamp=sendTime,
                                                 OutboundHex=request)
+                # send outbound message to peer via redis queue
                 self.redisMessaging.sendMessage(queue=outboundQueue, message=outboundMessage.model_dump_json(), queueExpiry=self.diameterRequestTimeout, usePrefix=True, prefixHostname=self.hostname, prefixServiceName='diameter')
                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Queueing for host: {hostname} on {peerIp}-{peerPort}", redisClient=self.redisMessaging)
+
+                # --- decode the request to extract request-level identifiers for fallback matching ---
+                requestE2E = None
+                requestHBH = None
+                try:
+                    req_packet_vars, req_avps = self.decode_diameter_packet(request)
+                    requestE2E = req_packet_vars.get('end-to-end-identifier', None)
+                    requestHBH = req_packet_vars.get('hop-by-hop-identifier', None)
+                    self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Request identifiers: E2E={requestE2E} HBH={requestHBH}", redisClient=self.redisMessaging)
+                except Exception:
+                    # If decode fails for some reason, continue without fallback identifiers
+                    self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Could not decode outbound request for identifiers: {traceback.format_exc()}", redisClient=self.redisMessaging)
+                    requestE2E = None
+                    requestHBH = None
+
                 startTimer = time.time()
                 while True:
                     try:
                         if not time.time() >= startTimer + timeout:
+                            # no sessionId supplied -> match by response type and sender and timestamp
                             if sessionId is None:
                                 queuedMessages = self.redisMessaging.getList(key=f"diameter-inbound", usePrefix=True, prefixHostname=self.hostname, prefixServiceName='diameter')
                                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] queuedMessages(NoSessionId): {queuedMessages}", redisClient=self.redisMessaging)
@@ -1142,12 +1159,32 @@ class Diameter:
                                     if clientAddress != peerIp or clientPort != peerPort:
                                         continue
                                     messageReceiveTime = queuedMessage.get('InitialReceiveTimestamp', None)
-                                    if float(messageReceiveTime) > sendTime:
-                                        messageHex = queuedMessage.get('InboundHex')
-                                        messageType = self.getDiameterMessageType(messageHex)
-                                        if messageType['inbound'].upper() == responseType.upper():
-                                            self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Found inbound response: {messageHex}", redisClient=self.redisMessaging)
+                                    if messageReceiveTime and float(messageReceiveTime) <= sendTime:
+                                        continue
+                                    messageHex = queuedMessage.get('InboundHex')
+                                    if not messageHex:
+                                        continue
+                                    messageType = self.getDiameterMessageType(messageHex)
+                                    if messageType['inbound'].upper() == responseType.upper():
+                                        # attempt to decode packet vars to allow fallback matching by ids
+                                        try:
+                                            packetVars, avps = self.decode_diameter_packet(messageHex)
+                                        except Exception:
+                                            packetVars = {}
+                                            avps = {}
+                                        # Primary match: responseType already matched, sender/ip/time checked -> return
+                                        # But also allow fallback by E2E/HBH if present for stronger matching
+                                        inbound_e2e = packetVars.get('end-to-end-identifier', None)
+                                        inbound_hbh = packetVars.get('hop-by-hop-identifier', None)
+                                        if requestE2E and inbound_e2e and requestE2E == inbound_e2e:
+                                            self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Matched by E2E id (no sessionId): {inbound_e2e}", redisClient=self.redisMessaging)
                                             return messageHex
+                                        if requestHBH and inbound_hbh and requestHBH == inbound_hbh:
+                                            self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Matched by HBH id (no sessionId): {inbound_hbh}", redisClient=self.redisMessaging)
+                                            return messageHex
+                                        # otherwise primary type match is acceptable
+                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Found inbound response (no sessionId match): {messageHex}", redisClient=self.redisMessaging)
+                                        return messageHex
                                 time.sleep(0.02)
                             else:
                                 queuedMessages = self.redisMessaging.getList(key=f"diameter-inbound", usePrefix=True, prefixHostname=self.hostname, prefixServiceName='diameter')
@@ -1159,24 +1196,59 @@ class Diameter:
                                     if clientAddress != peerIp or clientPort != peerPort:
                                         continue
                                     messageReceiveTime = queuedMessage.get('InitialReceiveTimestamp', None)
-                                    if float(messageReceiveTime) > sendTime:
-                                        messageHex = queuedMessage.get('InboundHex')
-                                        messageType = self.getDiameterMessageType(messageHex)
-                                        if messageType['inbound'].upper() == responseType.upper():
-                                            packetVars, avps = self.decode_diameter_packet(messageHex)
-                                            messageSessionId = bytes.fromhex(self.get_avp_data(avps, 263)[0]).decode('ascii')
-                                            if messageSessionId == sessionId:
-                                                self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Matched on Session Id: {sessionId}", redisClient=self.redisMessaging)
-                                                return messageHex
+                                    if messageReceiveTime and float(messageReceiveTime) <= sendTime:
+                                        continue
+                                    messageHex = queuedMessage.get('InboundHex')
+                                    if not messageHex:
+                                        continue
+                                    messageType = self.getDiameterMessageType(messageHex)
+                                    if messageType['inbound'].upper() != responseType.upper():
+                                        continue
+                                    # Attempt to decode inbound to get session id and identifiers
+                                    try:
+                                        packetVars, avps = self.decode_diameter_packet(messageHex)
+                                    except Exception:
+                                        packetVars = {}
+                                        avps = {}
+                                    # try to extract Session-Id (263)
+                                    try:
+                                        messageSessionId_raw = self.get_avp_data(avps, 263)
+                                        if messageSessionId_raw and len(messageSessionId_raw) > 0:
+                                            messageSessionId = bytes.fromhex(messageSessionId_raw[0]).decode('ascii')
+                                        else:
+                                            messageSessionId = None
+                                    except Exception:
+                                        messageSessionId = None
+
+                                    # PRIMARY MATCH: exact Session-Id + sender IP/port (existing behavior)
+                                    if messageSessionId is not None and messageSessionId == sessionId:
+                                        self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Matched on Session Id: {sessionId}", redisClient=self.redisMessaging)
+                                        return messageHex
+
+                                    # FALLBACK MATCH 1: match by End-to-End identifier
+                                    inbound_e2e = packetVars.get('end-to-end-identifier', None)
+                                    if requestE2E and inbound_e2e and requestE2E == inbound_e2e:
+                                        self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Matched by End-to-End Id (fallback): {inbound_e2e}", redisClient=self.redisMessaging)
+                                        return messageHex
+
+                                    # FALLBACK MATCH 2: match by Hop-by-Hop identifier
+                                    inbound_hbh = packetVars.get('hop-by-hop-identifier', None)
+                                    if requestHBH and inbound_hbh and requestHBH == inbound_hbh:
+                                        self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Matched by Hop-by-Hop Id (fallback): {inbound_hbh}", redisClient=self.redisMessaging)
+                                        return messageHex
+
                                 time.sleep(0.02)
                         else:
+                            # timed out waiting for response
+                            self.logTool.log(service='HSS', level='warning', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Timeout waiting for response after {timeout}s", redisClient=self.redisMessaging)
                             return ''
-                    except Exception as e:
+                    except Exception:
                         self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Traceback: {traceback.format_exc()}", redisClient=self.redisMessaging)
                         return ''
         except Exception as e:
             self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Error generating diameter outbound request: {traceback.format_exc()}", redisClient=self.redisMessaging)
             return ''
+
 
     def generateDiameterResponse(self, binaryData: str) -> str:
             try:
@@ -4156,6 +4228,15 @@ class Diameter:
                             chargingRuleName=rule_name,
                             chargingRuleAction='remove'
                         )
+                        
+                        # --- DEBUG: show raw RAA packet before decoding ---
+                        self.logTool.log(
+                            service='HSS',
+                            level='info',
+                            message=f"[STA] Raw reAuthAnswer received: {reAuthAnswer}",
+                            redisClient=self.redisMessaging
+)
+
                         if not len(reAuthAnswer) > 0:
                             self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout for rule: {rule_name}",
@@ -4188,6 +4269,15 @@ class Diameter:
                 
                 raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
                 raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
+                
+                # --- DEBUG: show parsed Result-Code from RAA ---
+                self.logTool.log(
+                    service='HSS',
+                    level='debug',
+                    message=f"[STA] Parsed raaResultCode={raaResultCode} for Session-Id={sessionId}",
+                    redisClient=self.redisMessaging
+                )
+
 
                 if raaResultCode == 2001:
                     rSTAResultCode = 2001
@@ -4206,14 +4296,25 @@ class Diameter:
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
-            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error generating STA, returning 5001", redisClient=self.redisMessaging)
+        except Exception as e:
+            # Detailed logging to capture the exact failure reason and stacktrace
+            self.logTool.log(service='HSS', level='info',
+                message=f"[diameter.py] [Answer_16777236_275] [STA] Exception: {str(e)} Traceback: {traceback.format_exc()}",
+                redisClient=self.redisMessaging)
+            # Build a proper STA with DIAMETER_ERROR_USER_UNKNOWN (5001) or better: preserve original Session-ID
             avp = ''
-            sessionId = self.get_avp_data(avps, 263)[0]                                                       #Get Session-ID
-            avp += self.generate_avp(263, 40, sessionId)                                                    #Set session ID to received session ID
-            avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
-            avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
-            response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
+            try:
+                sessionId = self.get_avp_data(avps, 263)[0]   # Get Session-ID (may throw if absent)
+            except Exception:
+                sessionId = None
+            if sessionId:
+                avp += self.generate_avp(263, 40, sessionId)
+            avp += self.generate_avp(264, 40, self.OriginHost)
+            avp += self.generate_avp(296, 40, self.OriginRealm)
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))   # return 5001 to caller
+            response = self.generate_diameter_packet("01", "40", 275, 16777236,
+                               packet_vars['hop-by-hop-identifier'],
+                               packet_vars['end-to-end-identifier'], avp)
             return response
 
     #3GPP Rx - Abort Session Answer (ASA)
