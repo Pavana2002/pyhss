@@ -4296,7 +4296,6 @@ class Diameter:
             response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
             return response
         except Exception as e:
-        except Exception as e:
             # Detailed logging to capture the exact failure reason and stacktrace
             self.logTool.log(service='HSS', level='info',
                 message=f"[diameter.py] [Answer_16777236_275] [STA] Exception: {str(e)} Traceback: {traceback.format_exc()}",
