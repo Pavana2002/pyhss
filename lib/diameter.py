@@ -4139,6 +4139,10 @@ class Diameter:
 
     #3GPP Rx - Session Termination Answer (STA)
     def Answer_16777236_275(self, packet_vars, avps):
+        # at function start of Answer_16777236_275 (immediately after def ...:)
+        imsi = None
+        apn = None
+
         try:
             """
             Triggers a Re-Auth-Request to the PGW, the returns a Session Termination Answer.
@@ -4161,6 +4165,12 @@ class Diameter:
                 subscriberId = subscriber.get('subscriber_id', None)
                 apnId = (self.database.Get_APN_by_Name(apn="ims")).get('apn_id', None)
                 servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
+                
+                if imsi is None or apn is None:
+                    self.logTool.log(service='HSS', level='warning',
+                    message=f"[STA-debug] Missing identifiers: sessionId={sessionId} imsi={imsi} apn={apn} packetVars_keys={list(packetVars.keys()) if 'packetVars' in locals() else 'N/A'}",
+                    redisClient=self.redisMessaging)
+
                 try:
                     if not servingApn or servingApn == None or servingApn == 'None':
                         #If we didn't find a serving APN for the Subscriber, try the other local HSS'.
@@ -4287,6 +4297,9 @@ class Diameter:
                     self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
 
             else:
+                # safe logging: avoid UnboundLocalError if variables are not set
+                safe_imsi = imsi if imsi is not None else "UNKNOWN_IMSI"
+                safe_apn  = apn  if apn  is not None else "UNKNOWN_APN"
                 avp += self.generate_avp(268, 40, self.int_to_hex(5012, 4))
                 response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Unable to find serving APN for RAR received for IMSI[{imsi}] APN[{apn}] - session not found, returning Result-Code 5012", redisClient=self.redisMessaging)
