@@ -3853,10 +3853,10 @@ class Diameter:
                                 avpUlBandwidth = int((self.get_avp_data(media_avp, 516)[0]), 16)
                                 avpDlBandwidth = int((self.get_avp_data(media_avp, 515)[0]), 16)
     
-                                if avpUlBandwidth <= ulBandwidth:
+                                if avpUlBandwidth:
                                     ulBandwidth = avpUlBandwidth
                         
-                                if avpDlBandwidth <= dlBandwidth:
+                                if avpDlBandwidth:
                                     dlBandwidth = avpDlBandwidth
                             except Exception as e:
                                 pass
