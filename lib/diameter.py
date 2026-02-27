@@ -1,3 +1,4 @@
+
 #Diameter Packet Decoder / Encoder & Tools
 import socket
 import binascii
@@ -4226,7 +4227,11 @@ class Diameter:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Original SessionID: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 aarSessionID = ""
             if servingApn is not None or emergencySubscriberData:
-                
+                # Delay RAR slightly to allow any in-progress E-RABSetup to complete
+                # before the charging rule removal triggers Delete-Bearer at the MME.
+                # Race window observed in pcap: ~300-500ms between STR and E-RABSetupResponse.
+                time.sleep(0.5)
+                    
                 for rule_name in [f'GBR-Voice_{aarSessionID}', f'GBR-Video_{aarSessionID}']:
                     try:
                         reAuthAnswer = self.awaitDiameterRequestAndResponse(
