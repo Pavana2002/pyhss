@@ -1078,7 +1078,7 @@ class Diameter:
         except Exception as e:
             return ''
 
-    def awaitDiameterRequestAndResponse(self, requestType: str, hostname: str, timeout: float=0.12, **kwargs) -> str:
+    def awaitDiameterRequestAndResponse(self, requestType: str, hostname: str, timeout: float=3.0, **kwargs) -> str:
         """
         Sends a given diameter request of requestType to the provided peer hostname.
         Ensures the peer is connected, sends the request, then waits on and returns the response.
@@ -1091,7 +1091,7 @@ class Diameter:
 
         Returns an empty string if fails.
 
-        Until diameter.py is rewritten to be asynchronous, this method should be called only when strictly necessary. It potentially adds up to 120ms of delay per invocation.
+        Until diameter.py is rewritten to be asynchronous, this method should be called only when strictly necessary. It potentially adds up to 3s of delay per invocation (typically responds in 200-500ms).
         """
         try:
             request = ''
@@ -1186,7 +1186,7 @@ class Diameter:
                                         # otherwise primary type match is acceptable
                                         self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Found inbound response (no sessionId match): {messageHex}", redisClient=self.redisMessaging)
                                         return messageHex
-                                time.sleep(0.02)
+                                time.sleep(0.01)
                             else:
                                 queuedMessages = self.redisMessaging.getList(key=f"diameter-inbound", usePrefix=True, prefixHostname=self.hostname, prefixServiceName='diameter')
                                 self.logTool.log(service='HSS', level='debug', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] queuedMessages({sessionId}): {queuedMessages} responseType: {responseType}", redisClient=self.redisMessaging)
@@ -1238,7 +1238,7 @@ class Diameter:
                                         self.logTool.log(service='HSS', level='debug', message=f"[awaitDiameterRequestAndResponse] [{requestType}] Matched by Hop-by-Hop Id (fallback): {inbound_hbh}", redisClient=self.redisMessaging)
                                         return messageHex
 
-                                time.sleep(0.02)
+                                time.sleep(0.01)
                         else:
                             # timed out waiting for response
                             self.logTool.log(service='HSS', level='warning', message=f"[diameter.py] [awaitDiameterRequestAndResponse] [{requestType}] Timeout waiting for response after {timeout}s", redisClient=self.redisMessaging)
