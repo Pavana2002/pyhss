@@ -3819,6 +3819,12 @@ class Diameter:
                                     servingApn = remoteServingApn
                                 else:
                                     servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
+                                    # Fallback: If no serving_apn for IMS APN, try default/internet APN.
+                                    # In open5gs, the SMF often creates the Gx session on the default APN
+                                    # (apn_id=1) rather than a separate IMS APN PDN connection.
+                                    if not servingApn and apnId is not None and apnId != 1:
+                                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] No Serving APN for apnId={apnId}, falling back to default APN (apn_id=1)", redisClient=self.redisMessaging)
+                                        servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=1)
                                 if not servingApn:
                                     self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] No Serving APN found for subscriberId: {subscriberId} apnId: {apnId} — Gx session not established yet", redisClient=self.redisMessaging)
                                     raise Exception(f"No Serving APN record for subscriber {subscriberId}")

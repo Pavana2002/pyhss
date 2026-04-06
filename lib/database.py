@@ -2200,9 +2200,12 @@ class Database:
             self.logTool.log(service='Database', level='debug', message=E, redisClient=self.redisMessaging)
             self.safe_close(session)
             raise ValueError(E)
+        if result is None:
+            self.safe_close(session)
+            return None
         result = result.__dict__
         result.pop('_sa_instance_state')
-        
+
         self.safe_close(session)
         return result   
 
