@@ -3819,7 +3819,14 @@ class Diameter:
                                     servingApn = remoteServingApn
                                 else:
                                     servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
-                                servingPgwPeer = servingApn.get('serving_pgw_peer', None).split(';')[0]
+                                if not servingApn:
+                                    self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] No Serving APN found for subscriberId: {subscriberId} apnId: {apnId} — Gx session not established yet", redisClient=self.redisMessaging)
+                                    raise Exception(f"No Serving APN record for subscriber {subscriberId}")
+                                servingPgwPeerRaw = servingApn.get('serving_pgw_peer', None)
+                                if not servingPgwPeerRaw:
+                                    self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] serving_pgw_peer is NULL for subscriberId: {subscriberId} — PGW Gx peer not recorded", redisClient=self.redisMessaging)
+                                    raise Exception(f"serving_pgw_peer is NULL for subscriber {subscriberId}")
+                                servingPgwPeer = servingPgwPeerRaw.split(';')[0]
                                 servingPgw = servingApn.get('serving_pgw', None)
                                 servingPgwRealm = servingApn.get('serving_pgw_realm', None)
                                 pcrfSessionId = servingApn.get('pcrf_session_id', None)

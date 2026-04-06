@@ -1730,16 +1730,21 @@ class Database:
     def Get_APN_by_Name(self, apn):
         self.logTool.log(service='Database', level='debug', message="Getting APN named " + str(apn), redisClient=self.redisMessaging)
         Session = sessionmaker(bind = self.engine)
-        session = Session()    
+        session = Session()
         try:
-            result = session.query(APN).filter_by(apn=str(apn)).one()
+            result = session.query(APN).filter_by(apn=str(apn)).first()
+            if result is None:
+                self.safe_close(session)
+                raise ValueError(f"APN '{apn}' not found")
+        except ValueError:
+            raise
         except Exception as E:
             self.safe_close(session)
             raise ValueError(E)
         result = result.__dict__
         result.pop('_sa_instance_state')
         self.safe_close(session)
-        return result 
+        return result
 
     def Update_AuC(self, auc_id, sqn=1, propagate=True):
         self.logTool.log(service='Database', level='debug', message=f"Updating AuC record for ID: {auc_id}", redisClient=self.redisMessaging)
