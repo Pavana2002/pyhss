@@ -1,4 +1,3 @@
-
 #Diameter Packet Decoder / Encoder & Tools
 import socket
 import binascii
@@ -4058,6 +4057,38 @@ class Diameter:
                             if raaResultCode == 2001:
 	                            rAAAResultCode = 2001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
+	                            # --- FIX: store per-Rx-session → Gx binding in Redis ---
+	                            # This allows the STR handler to look up the correct Gx session
+	                            # for THIS specific Rx session, even when multiple concurrent
+	                            # sessions share the same UE IP / subscriber (e.g. hold+second call).
+	                            try:
+	                                rx_session_key = f"rx_session:{sessionId}"
+	                                # --- Merge rules: read existing binding and append new rule ---
+	                                # A voice+video upgrade sends two AARs on the SAME session ID.
+	                                # The second (Video) must not overwrite the first (Voice).
+	                                # We keep a 'rules' list so STR can remove ALL installed rules.
+	                                existing_raw = self.redisMessaging.getValue(key=rx_session_key)
+	                                if existing_raw:
+	                                    existing_binding = json.loads(existing_raw)
+	                                    existing_rules = existing_binding.get("rules", [existing_binding.get("rule_name")])
+	                                    if rule_name not in existing_rules:
+	                                        existing_rules.append(rule_name)
+	                                    rx_session_binding = existing_binding
+	                                    rx_session_binding["rules"] = existing_rules
+	                                else:
+	                                    rx_session_binding = {
+	                                        "pcrfSessionId": pcrfSessionId,
+	                                        "servingPgw": servingPgw,
+	                                        "servingPgwRealm": servingPgwRealm,
+	                                        "servingPgwPeer": servingPgwPeer,
+	                                        "imsi": imsi,
+	                                        "rule_name": rule_name,
+	                                        "rules": [rule_name],
+	                                    }
+	                                self.redisMessaging.setValue(key=rx_session_key, value=json.dumps(rx_session_binding), keyExpiry=7200)
+	                                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] Stored Rx→Gx binding in Redis: key={rx_session_key} pcrfSessionId={pcrfSessionId} rules={rx_session_binding['rules']}", redisClient=self.redisMessaging)
+	                            except Exception as redis_ex:
+	                                self.logTool.log(service='HSS', level='error', message=f"[diameter.py] [Answer_16777236_265] [AAA] Failed to store Rx→Gx binding in Redis: {traceback.format_exc()}", redisClient=self.redisMessaging)
                             else:
 	                            rAAAResultCode = 4001
 	                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_265] [AAA] RAA returned Unauthorized, declining request", redisClient=self.redisMessaging)
@@ -4153,99 +4184,165 @@ class Diameter:
 
     #3GPP Rx - Session Termination Answer (STA)
     def Answer_16777236_275(self, packet_vars, avps):
-        # at function start of Answer_16777236_275 (immediately after def ...:)
         imsi = None
         apn = None
 
         try:
             """
-            Triggers a Re-Auth-Request to the PGW, the returns a Session Termination Answer.
+            Triggers a Re-Auth-Request to the PGW, then returns a Session Termination Answer.
+
+            FIX: Use a per-Rx-session Redis binding (written by Answer_16777236_265) as the
+            PRIMARY source for the Gx session parameters (pcrfSessionId, servingPgw, etc.).
+            This avoids the single-DB-row collision when two concurrent Rx sessions share the
+            same UE IP / subscriber (e.g. UE_B on hold while UE_C is in a call with UE_A).
+            The DB lookup is kept as a fallback for backward compatibility.
             """
             avp = ''
-            sessionId = bytes.fromhex(self.get_avp_data(avps, 263)[0]).decode('ascii')                                          #Get Session-ID
-            avp += self.generate_avp(263, 40, self.string_to_hex(sessionId))                                                    #Set session ID to received session ID
-            avp += self.generate_avp(264, 40, self.OriginHost)                                               #Origin Host
-            avp += self.generate_avp(296, 40, self.OriginRealm)                                              #Origin Realm
-            
+            sessionId = bytes.fromhex(self.get_avp_data(avps, 263)[0]).decode('ascii')
+            avp += self.generate_avp(263, 40, self.string_to_hex(sessionId))
+            avp += self.generate_avp(264, 40, self.OriginHost)
+            avp += self.generate_avp(296, 40, self.OriginRealm)
+
             rSTAResultCode = 2001
             servingApn = None
+            pcrfSessionId = None
+            servingPgw = None
+            servingPgwRealm = None
+            servingPgwPeer = None
+            rxRuleName = None          # rule name stored at AAR time, used as remove hint
+            emergencySubscriberData = None
+
+            # ----------------------------------------------------------------
+            # FIX 2: Primary lookup — Redis per-Rx-session binding.
+            # Written by Answer_16777236_265 when the RAR succeeds.
+            # Key: "rx_session:<Rx-Session-Id>"
+            # ----------------------------------------------------------------
+            rxBindingResolved = False
             try:
-                imsSubscriber = self.database.Get_IMS_Subscriber_By_Session_Id(sessionId=sessionId)
-                imsi = imsSubscriber.get('imsi', None)
-                pcscf = imsSubscriber.get('pcscf', None)
-                pcscf_realm = imsSubscriber.get('pcscf_realm', None)
-                pcscf_peer = imsSubscriber.get('pcscf_peer', None)
-                subscriber = self.database.Get_Subscriber(imsi=imsi)
-                subscriberId = subscriber.get('subscriber_id', None)
-                apnId = (self.database.Get_APN_by_Name(apn="ims")).get('apn_id', None)
-                servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
-                
-                if imsi is None or apn is None:
-                    self.logTool.log(service='HSS', level='warning',
-                    message=f"[STA-debug] Missing identifiers: sessionId={sessionId} imsi={imsi} apn={apn} packetVars_keys={list(packetVars.keys()) if 'packetVars' in locals() else 'N/A'}",
-                    redisClient=self.redisMessaging)
+                rx_session_key = f"rx_session:{sessionId}"
+                rx_binding_raw = self.redisMessaging.getValue(key=rx_session_key)
+                if rx_binding_raw:
+                    rx_binding = json.loads(rx_binding_raw)
+                    pcrfSessionId   = rx_binding.get('pcrfSessionId')
+                    servingPgw      = rx_binding.get('servingPgw')
+                    servingPgwRealm = rx_binding.get('servingPgwRealm')
+                    servingPgwPeer  = rx_binding.get('servingPgwPeer', '').split(';')[0]
+                    imsi            = rx_binding.get('imsi')
+                    rxRuleName      = rx_binding.get('rule_name')
+                    servingApn      = True   # sentinel: we have everything we need
+                    rxBindingResolved = True
+                    # Delete the key now — STR means the session is ending.
+                    self.redisMessaging.redisClient.delete(rx_session_key)
+                    self.logTool.log(service='HSS', level='info',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] Resolved Gx binding from Redis for Rx session {sessionId}: pcrfSessionId={pcrfSessionId} imsi={imsi} rule={rxRuleName}",
+                        redisClient=self.redisMessaging)
+            except Exception:
+                pass  # Normal for Control (MediaType=4) sessions — no Redis key expected
 
+            # ----------------------------------------------------------------
+            # Fallback: DB lookup (original path — retained for compatibility).
+            # Used when the Redis key has already expired or was never written
+            # (e.g. pyhs restart between AAR and STR).
+            # ----------------------------------------------------------------
+            if not rxBindingResolved:
                 try:
-                    if not servingApn or servingApn == None or servingApn == 'None':
-                        #If we didn't find a serving APN for the Subscriber, try the other local HSS'.
-                        localGeoredEndpoints = config.get('geored', {}).get('local_endpoints', [])
-                        for localGeoredEndpoint in localGeoredEndpoints:
-                            endpointUrl = f"{localGeoredEndpoint}/pcrf/pcrf_subscriber_imsi/{imsi}"
-                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Searching remote HSS for serving apn: {endpointUrl}", redisClient=self.redisMessaging)
-                            response = requests.get(url=endpointUrl, timeout=1)
-                            responseJson = response.json()
-                            if not responseJson:
-                                continue
-                            self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Recieved response from remote HSS: {responseJson}", redisClient=self.redisMessaging)
-                            remoteServingApn = responseJson
-                            servingImsApn = remoteServingApn.get('apns', {}).get('ims', {})
-                            if servingImsApn:
-                                servingApn = servingImsApn
-                except:
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error Searching remote HSS for serving apn: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                if servingApn is not None:
-                    servingPgw = servingApn.get('serving_pgw', '')
-                    servingPgwRealm = servingApn.get('serving_pgw_realm', '')
-                    servingPgwPeer = servingApn.get('serving_pgw_peer', '').split(';')[0]
-                    pcrfSessionId = servingApn.get('pcrf_session_id', None)
-                else:
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] No servingApn defined for IMS Subscriber", redisClient=self.redisMessaging)
-                self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=pcscf, pcscf_realm=pcscf_realm, pcscf_peer=pcscf_peer, pcscf_active_session=None)
-            except Exception as e:
-                pass
+                    imsSubscriber = self.database.Get_IMS_Subscriber_By_Session_Id(sessionId=sessionId)
+                    imsi = imsSubscriber.get('imsi', None)
+                    pcscf = imsSubscriber.get('pcscf', None)
+                    pcscf_realm = imsSubscriber.get('pcscf_realm', None)
+                    pcscf_peer = imsSubscriber.get('pcscf_peer', None)
+                    subscriber = self.database.Get_Subscriber(imsi=imsi)
+                    subscriberId = subscriber.get('subscriber_id', None)
+                    apnId = (self.database.Get_APN_by_Name(apn="ims")).get('apn_id', None)
+                    servingApn = self.database.Get_Serving_APN(subscriber_id=subscriberId, apn_id=apnId)
 
-            """
-            Determine if the Session-ID for the STR belongs to an inbound roaming emergency subscriber.
-            """
+                    try:
+                        if not servingApn:
+                            localGeoredEndpoints = config.get('geored', {}).get('local_endpoints', [])
+                            for localGeoredEndpoint in localGeoredEndpoints:
+                                endpointUrl = f"{localGeoredEndpoint}/pcrf/pcrf_subscriber_imsi/{imsi}"
+                                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Searching remote HSS for serving apn: {endpointUrl}", redisClient=self.redisMessaging)
+                                response = requests.get(url=endpointUrl, timeout=1)
+                                responseJson = response.json()
+                                if not responseJson:
+                                    continue
+                                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Recieved response from remote HSS: {responseJson}", redisClient=self.redisMessaging)
+                                remoteServingApn = responseJson
+                                servingImsApn = remoteServingApn.get('apns', {}).get('ims', {})
+                                if servingImsApn:
+                                    servingApn = servingImsApn
+                    except Exception:
+                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error Searching remote HSS for serving apn: {traceback.format_exc()}", redisClient=self.redisMessaging)
+
+                    if servingApn is not None:
+                        servingPgw      = servingApn.get('serving_pgw', '')
+                        servingPgwRealm = servingApn.get('serving_pgw_realm', '')
+                        servingPgwPeer  = servingApn.get('serving_pgw_peer', '').split(';')[0]
+                        pcrfSessionId   = servingApn.get('pcrf_session_id', None)
+                    else:
+                        self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] No servingApn defined for IMS Subscriber", redisClient=self.redisMessaging)
+
+                    self.database.Update_Proxy_CSCF(imsi=imsi, proxy_cscf=pcscf, pcscf_realm=pcscf_realm, pcscf_peer=pcscf_peer, pcscf_active_session=None)
+                except Exception:
+                    self.logTool.log(service='HSS', level='debug',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] DB fallback lookup (no Redis key, no DB match) session={sessionId}: {traceback.format_exc()}",
+                        redisClient=self.redisMessaging)
+
+            # ----------------------------------------------------------------
+            # Emergency subscriber override (unchanged from original).
+            # ----------------------------------------------------------------
             try:
                 emergencySubscriberData = self.database.Get_Emergency_Subscriber(rxSessionId=sessionId)
                 if emergencySubscriberData:
-                    emergencySubscriber = True
                     self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Found emergency subscriber with Rx Session: {sessionId}", redisClient=self.redisMessaging)
-            except Exception as e:
+            except Exception:
                 self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Emergency Subscriber Data: {traceback.format_exc()}", redisClient=self.redisMessaging)
                 emergencySubscriberData = None
-            
-            if emergencySubscriberData:
-                servingPgwPeer = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
-                pcrfSessionId = emergencySubscriberData.get('serving_pgw', None)
-                servingPgwRealm = emergencySubscriberData.get('gx_origin_realm', None)
-                servingPgw = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
 
-            try:
-                aarSessionID = self.get_avp_data(avps, 263)[0]
-                aarSessionID = bytes.fromhex(aarSessionID).decode('ascii')
-                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Got Original SessionID: {aarSessionID}", redisClient=self.redisMessaging)
-            except:
-                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Error getting Original SessionID: {traceback.format_exc()}", redisClient=self.redisMessaging)
-                aarSessionID = ""
+            if emergencySubscriberData:
+                servingPgwPeer  = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
+                pcrfSessionId   = emergencySubscriberData.get('serving_pgw', None)
+                servingPgwRealm = emergencySubscriberData.get('gx_origin_realm', None)
+                servingPgw      = emergencySubscriberData.get('serving_pgw', None).split(';')[0]
+                servingApn      = True   # sentinel
+
+            # aarSessionID is always the STR Session-Id (same as sessionId for Rx).
+            aarSessionID = sessionId
+
+            self.logTool.log(service='HSS', level='info',
+                message=f"[diameter.py] [Answer_16777236_275] [STA] sessionId={sessionId} aarSessionID={aarSessionID} rxBindingResolved={rxBindingResolved} pcrfSessionId={pcrfSessionId} servingPgwPeer={servingPgwPeer}",
+                redisClient=self.redisMessaging)
+
             if servingApn is not None or emergencySubscriberData:
                 # Delay RAR slightly to allow any in-progress E-RABSetup to complete
                 # before the charging rule removal triggers Delete-Bearer at the MME.
-                # Race window observed in pcap: ~300-500ms between STR and E-RABSetupResponse.
                 time.sleep(0.5)
-                    
-                for rule_name in [f'GBR-Voice_{aarSessionID}', f'GBR-Video_{aarSessionID}']:
+
+                # Build the list of rules to remove.
+                # PRIMARY: use the 'rules' list stored in Redis at AAR time.
+                #   This captures BOTH Voice and Video when a call upgrades to video,
+                #   since each media-type AAR appends to the list.
+                # FALLBACK: if Redis had no binding (pre-fix legacy session or expiry),
+                #   attempt the standard GBR-Voice_ and GBR-Video_ pattern names.
+                if rxBindingResolved and rx_binding.get("rules"):
+                    rules_to_remove = rx_binding["rules"]
+                    self.logTool.log(service='HSS', level='info',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] Rules to remove from Redis binding: {rules_to_remove}",
+                        redisClient=self.redisMessaging)
+                else:
+                    rules_to_remove = [f'GBR-Voice_{aarSessionID}', f'GBR-Video_{aarSessionID}']
+                    self.logTool.log(service='HSS', level='info',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] No Redis rules list, using default pattern: {rules_to_remove}",
+                        redisClient=self.redisMessaging)
+
+                # FIX 3: Track success/failure PER rule inside the loop.
+                # The old code had a redundant post-loop decode of `reAuthAnswer` that:
+                #   (a) re-used the last RAA (always GBR-Video), overwriting the Voice result
+                #   (b) crashed with assert()/UnboundLocalError if all RAAs timed out
+                # We now determine rSTAResultCode purely from the per-rule results.
+                voiceRuleRemoved = False
+
+                for rule_name in rules_to_remove:
                     try:
                         reAuthAnswer = self.awaitDiameterRequestAndResponse(
                             requestType='RAR',
@@ -4256,92 +4353,88 @@ class Diameter:
                             chargingRuleName=rule_name,
                             chargingRuleAction='remove'
                         )
-                        
-                        # --- DEBUG: show raw RAA packet before decoding ---
-                        self.logTool.log(
-                            service='HSS',
-                            level='info',
-                            message=f"[STA] Raw reAuthAnswer received: {reAuthAnswer}",
-                            redisClient=self.redisMessaging
-)
 
-                        if not len(reAuthAnswer) > 0:
+                        if not reAuthAnswer or not len(reAuthAnswer) > 0:
                             self.logTool.log(service='HSS', level='info',
-                                message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout for rule: {rule_name}",
+                                message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout for rule: {rule_name} — skipping",
                                 redisClient=self.redisMessaging)
                             continue
 
                         raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
                         raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
 
+                        self.logTool.log(service='HSS', level='info',
+                            message=f"[diameter.py] [Answer_16777236_275] [STA] RAA result for rule {rule_name}: {raaResultCode}",
+                            redisClient=self.redisMessaging)
+
                         if raaResultCode == 2001:
-                            rSTAResultCode = 2001
                             self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Successfully removed rule: {rule_name}",
                                 redisClient=self.redisMessaging)
+                            if 'Voice' in rule_name:
+                                voiceRuleRemoved = True
                         else:
-                            rSTAResultCode = 5001
                             self.logTool.log(service='HSS', level='info',
                                 message=f"[diameter.py] [Answer_16777236_275] [STA] Failed to remove rule: {rule_name} (Result-Code: {raaResultCode})",
                                 redisClient=self.redisMessaging)
+                            # Only treat Voice failure as hard failure.
+                            # Video failure is non-fatal — voice-only calls have no Video rule.
+                            if 'Voice' in rule_name:
+                                rSTAResultCode = 5001
 
-                    except Exception as e:
-                        rSTAResultCode = 5001
+                    except Exception:
                         self.logTool.log(service='HSS', level='info',
                             message=f"[diameter.py] [Answer_16777236_275] [STA] Exception while removing rule {rule_name}: {traceback.format_exc()}",
                             redisClient=self.redisMessaging)
+                        if 'Voice' in rule_name:
+                            rSTAResultCode = 5001
 
-                if not len(reAuthAnswer) > 0:
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA Timeout: {reAuthAnswer}", redisClient=self.redisMessaging)
-                    assert()
-                
-                raaPacketVars, raaAvps = self.decode_diameter_packet(reAuthAnswer)
-                raaResultCode = int(self.get_avp_data(raaAvps, 268)[0], 16)
-                
-                # --- DEBUG: show parsed Result-Code from RAA ---
-                self.logTool.log(
-                    service='HSS',
-                    level='debug',
-                    message=f"[STA] Parsed raaResultCode={raaResultCode} for Session-Id={sessionId}",
-                    redisClient=self.redisMessaging
-                )
-
-
-                if raaResultCode == 2001:
+                # Final result: success if Voice rule was removed (Video is optional).
+                if voiceRuleRemoved:
                     rSTAResultCode = 2001
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Successfully, authorizing request", redisClient=self.redisMessaging)
-                else:
-                    rSTAResultCode = 5001
-                    self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] RAA returned Unauthorized, returning Result-Code 5001", redisClient=self.redisMessaging)
+                    self.logTool.log(service='HSS', level='info',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] Voice rule removed successfully, returning 2001",
+                        redisClient=self.redisMessaging)
+                elif rSTAResultCode != 5001:
+                    # Neither rule was installed (e.g. re-INVITE hold with no media)
+                    # or both timed out — return 2001 so P-CSCF doesn't retry.
+                    rSTAResultCode = 2001
+                    self.logTool.log(service='HSS', level='info',
+                        message=f"[diameter.py] [Answer_16777236_275] [STA] No Voice rule found/removed, returning 2001 (non-media session or already cleaned)",
+                        redisClient=self.redisMessaging)
 
             else:
-                # safe logging: avoid UnboundLocalError if variables are not set
                 safe_imsi = imsi if imsi is not None else "UNKNOWN_IMSI"
                 safe_apn  = apn  if apn  is not None else "UNKNOWN_APN"
-                avp += self.generate_avp(268, 40, self.int_to_hex(5012, 4))
-                response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
-                self.logTool.log(service='HSS', level='info', message=f"[diameter.py] [Answer_16777236_275] [STA] Unable to find serving APN for RAR received for IMSI[{imsi}] APN[{apn}] - session not found, returning Result-Code 5012", redisClient=self.redisMessaging)
+                # No Gx binding found via Redis or DB. This is expected for sessions
+                # established before the Redis fix was deployed (pre-fix legacy sessions
+                # whose AAR ran on the old code with no Redis store).
+                # Return 2001 so P-CSCF does not retry — there are no GBR rules to remove.
+                self.logTool.log(service='HSS', level='debug',
+                    message=f"[diameter.py] [Answer_16777236_275] [STA] No Gx binding found for session={sessionId} imsi={safe_imsi} — likely a pre-fix legacy session or re-registration STR. Returning 2001 (no-op).",
+                    redisClient=self.redisMessaging)
+                avp += self.generate_avp(268, 40, self.int_to_hex(2001, 4))
+                response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)
                 return response
 
             avp += self.generate_avp(268, 40, self.int_to_hex(rSTAResultCode, 4))
-            response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)     #Generate Diameter packet
+            response = self.generate_diameter_packet("01", "40", 275, 16777236, packet_vars['hop-by-hop-identifier'], packet_vars['end-to-end-identifier'], avp)
             return response
+
         except Exception as e:
-            # Detailed logging to capture the exact failure reason and stacktrace
             self.logTool.log(service='HSS', level='info',
                 message=f"[diameter.py] [Answer_16777236_275] [STA] Exception: {str(e)} Traceback: {traceback.format_exc()}",
                 redisClient=self.redisMessaging)
-            # Build a proper STA with DIAMETER_ERROR_USER_UNKNOWN (5001) or better: preserve original Session-ID
             avp = ''
             try:
-                sessionId = self.get_avp_data(avps, 263)[0]   # Get Session-ID (may throw if absent)
+                sessionId = self.get_avp_data(avps, 263)[0]
             except Exception:
                 sessionId = None
             if sessionId:
                 avp += self.generate_avp(263, 40, sessionId)
             avp += self.generate_avp(264, 40, self.OriginHost)
             avp += self.generate_avp(296, 40, self.OriginRealm)
-            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))   # return 5001 to caller
+            avp += self.generate_avp(268, 40, self.int_to_hex(5001, 4))
             response = self.generate_diameter_packet("01", "40", 275, 16777236,
                                packet_vars['hop-by-hop-identifier'],
                                packet_vars['end-to-end-identifier'], avp)
