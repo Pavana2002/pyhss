@@ -753,7 +753,7 @@ if UPLOAD_ENABLED :
                             "imsi": imsi,
                             "msisdn": msisdn,
                             "sh_profile": "string",
-                            "scscf_peer": f"scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
+                            "scscf_peer": f"scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org",
                             "msisdn_list": f"[{msisdn}]",
                             "ifc_path": "default_ifc.xml",
                             "scscf": f"sip:scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org:6060",
