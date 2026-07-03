@@ -714,7 +714,8 @@ if UPLOAD_ENABLED :
 
                 for _, row in df.iterrows():
                     # FIX: always cast to string before zfill/replace
-                    imsi = str(row["imsi"]).split('.')[0].zfill(15) if pd.notna(row["imsi"]) else None
+                    # imsi = str(row["imsi"]).split('.')[0].zfill(15) if pd.notna(row["imsi"]) else None
+                    imsi = str(row["imsi"]).split('.')[0] if pd.notna(row["imsi"]) else None
                     msisdn = str(row["msisdn"]).replace('+', '') if pd.notna(row["msisdn"]) else None
 
                     # === AUC data ===
@@ -752,11 +753,11 @@ if UPLOAD_ENABLED :
                             "imsi": imsi,
                             "msisdn": msisdn,
                             "sh_profile": "string",
-                            "scscf_peer": "scscf.ims.mnc001.mcc001.3gppnetwork.org",
+                            "scscf_peer": f"scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
                             "msisdn_list": f"[{msisdn}]",
                             "ifc_path": "default_ifc.xml",
-                            "scscf": "sip:scscf.ims.mnc001.mcc001.3gppnetwork.org:6060",
-                            "scscf_realm": "ims.mnc001.mcc001.3gppnetwork.org"
+                            "scscf": f"sip:scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org:6060",
+                            "scscf_realm": f"ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
                         }
 
                         databaseClient.CreateObj(SUBSCRIBER, subscriber_data, False)
