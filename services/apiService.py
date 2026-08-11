@@ -753,11 +753,11 @@ if UPLOAD_ENABLED :
                             "imsi": imsi,
                             "msisdn": msisdn,
                             "sh_profile": "string",
-                            "scscf_peer": f"scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org",
+                            "scscf_peer": f"scscf.ims.mnc0{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
                             "msisdn_list": f"[{msisdn}]",
                             "ifc_path": "default_ifc.xml",
-                            "scscf": f"sip:scscf.ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org:6060",
-                            "scscf_realm": f"ims.mnc{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
+                            "scscf": f"sip:scscf.ims.mnc0{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org:6060",
+                            "scscf_realm": f"ims.mnc0{imsi[3:5]}.mcc{imsi[0:3]}.3gppnetwork.org"
                         }
 
                         databaseClient.CreateObj(SUBSCRIBER, subscriber_data, False)
